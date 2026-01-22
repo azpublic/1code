@@ -63,7 +63,9 @@ import { apiFetch } from "../../../lib/api-fetch"
 import {
   customClaudeConfigAtom,
   isDesktopAtom, isFullscreenAtom,
-  normalizeCustomClaudeConfig, soundNotificationsEnabledAtom
+  normalizeCustomClaudeConfig,
+  selectedOllamaModelAtom,
+  soundNotificationsEnabledAtom
 } from "../../../lib/atoms"
 import { useFileChangeListener, useGitWatcher } from "../../../lib/hooks/use-file-change-listener"
 import { appStore } from "../../../lib/jotai-store"
@@ -814,9 +816,10 @@ const ScrollToBottomButton = memo(function ScrollToBottomButton({
 // Message group wrapper - measures user message height for sticky todo positioning
 interface MessageGroupProps {
   children: React.ReactNode
+  isLastGroup?: boolean
 }
 
-function MessageGroup({ children }: MessageGroupProps) {
+function MessageGroup({ children, isLastGroup }: MessageGroupProps) {
   const groupRef = useRef<HTMLDivElement>(null)
   const userMessageRef = useRef<HTMLDivElement | null>(null)
 
@@ -854,7 +857,10 @@ function MessageGroup({ children }: MessageGroupProps) {
         contentVisibility: "auto",
         // Примерная высота для правильного скроллбара до рендеринга
         containIntrinsicSize: "auto 200px",
+        // Последняя группа имеет минимальную высоту контейнера чата (минус отступ)
+        ...(isLastGroup && { minHeight: "calc(var(--chat-container-height) - 32px)" }),
       }}
+      data-last-group={isLastGroup || undefined}
     >
       {children}
     </div>
@@ -1848,6 +1854,10 @@ const ChatViewInner = memo(function ChatViewInner({
       isAutoScrollingRef.current = false
     }
   }, [])
+
+  // Track chat container height via CSS custom property (no re-renders)
+  const chatContainerObserverRef = useRef<ResizeObserver | null>(null)
+
   const editorRef = useRef<AgentsMentionsEditorHandle>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
   const questionRef = useRef<AgentUserQuestionHandle>(null)
@@ -2792,9 +2802,6 @@ const ChatViewInner = memo(function ChatViewInner({
         trpcClient.chats.updatePrInfo
           .mutate({ chatId: parentChatId, prUrl, prNumber })
           .then(() => {
-            toast.success(`PR #${prNumber} created!`, {
-              position: "top-center",
-            })
             // Invalidate the agentChat query to refetch with new PR info
             utils.agents.getAgentChat.invalidate({ chatId: parentChatId })
           })
@@ -3745,7 +3752,23 @@ const ChatViewInner = memo(function ChatViewInner({
       {/* Messages */}
       <div
         ref={(el) => {
+          // Cleanup previous observer
+          if (chatContainerObserverRef.current) {
+            chatContainerObserverRef.current.disconnect()
+            chatContainerObserverRef.current = null
+          }
+
           chatContainerRef.current = el
+
+          // Setup ResizeObserver for --chat-container-height CSS variable
+          if (el) {
+            const observer = new ResizeObserver((entries) => {
+              const height = entries[0]?.contentRect.height ?? 0
+              el.style.setProperty("--chat-container-height", `${height}px`)
+            })
+            observer.observe(el)
+            chatContainerObserverRef.current = observer
+          }
         }}
         className="flex-1 overflow-y-auto w-full relative allow-text-selection outline-none"
         tabIndex={-1}
@@ -3909,6 +3932,7 @@ export function ChatView({
   const isDesktop = useAtomValue(isDesktopAtom)
   const isFullscreen = useAtomValue(isFullscreenAtom)
   const customClaudeConfig = useAtomValue(customClaudeConfigAtom)
+  const selectedOllamaModel = useAtomValue(selectedOllamaModelAtom)
   const normalizedCustomClaudeConfig =
     normalizeCustomClaudeConfig(customClaudeConfig)
   const hasCustomClaudeConfig = Boolean(normalizedCustomClaudeConfig)
@@ -5368,7 +5392,7 @@ Make sure to preserve all functionality from both branches when resolving confli
         userMessage,
         isFirstSubChat: isFirst,
         generateName: async (msg) => {
-          return generateSubChatNameMutation.mutateAsync({ userMessage: msg })
+          return generateSubChatNameMutation.mutateAsync({ userMessage: msg, ollamaModel: selectedOllamaModel })
         },
         renameSubChat: async (input) => {
           await renameSubChatMutation.mutateAsync(input)
@@ -5444,6 +5468,7 @@ Make sure to preserve all functionality from both branches when resolving confli
       renameSubChatMutation,
       renameChatMutation,
       selectedTeamId,
+      selectedOllamaModel,
       utils.agents.getAgentChats,
       utils.agents.getAgentChat,
     ],

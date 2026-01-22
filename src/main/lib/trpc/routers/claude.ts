@@ -925,17 +925,126 @@ export const claudeRouter = router({
               })
             }
 
+            // For Ollama: embed context AND history directly in prompt
+            // Ollama doesn't have server-side sessions, so we must include full history
+            let finalQueryPrompt: string | AsyncIterable<any> = prompt
+            if (isUsingOllama && typeof prompt === 'string') {
+              // Format conversation history from existingMessages (excluding current message)
+              // IMPORTANT: Include tool calls info so model knows what files were read/edited
+              let historyText = ''
+              if (existingMessages.length > 0) {
+                const historyParts: string[] = []
+                for (const msg of existingMessages) {
+                  if (msg.role === 'user') {
+                    // Extract text from user message parts
+                    const textParts = msg.parts?.filter((p: any) => p.type === 'text').map((p: any) => p.text) || []
+                    if (textParts.length > 0) {
+                      historyParts.push(`User: ${textParts.join('\n')}`)
+                    }
+                  } else if (msg.role === 'assistant') {
+                    // Extract text AND tool calls from assistant message parts
+                    const parts = msg.parts || []
+                    const textParts: string[] = []
+                    const toolSummaries: string[] = []
+
+                    for (const p of parts) {
+                      if (p.type === 'text' && p.text) {
+                        textParts.push(p.text)
+                      } else if (p.type === 'tool_use' || p.type === 'tool-use') {
+                        // Include brief tool call info - this is critical for context!
+                        const toolName = p.name || p.tool || 'unknown'
+                        const toolInput = p.input || {}
+                        // Extract key info based on tool type
+                        let toolInfo = `[Used ${toolName}`
+                        if (toolName === 'Read' && (toolInput.file_path || toolInput.file)) {
+                          toolInfo += `: ${toolInput.file_path || toolInput.file}`
+                        } else if (toolName === 'Edit' && toolInput.file_path) {
+                          toolInfo += `: ${toolInput.file_path}`
+                        } else if (toolName === 'Write' && toolInput.file_path) {
+                          toolInfo += `: ${toolInput.file_path}`
+                        } else if (toolName === 'Glob' && toolInput.pattern) {
+                          toolInfo += `: ${toolInput.pattern}`
+                        } else if (toolName === 'Grep' && toolInput.pattern) {
+                          toolInfo += `: "${toolInput.pattern}"`
+                        } else if (toolName === 'Bash' && toolInput.command) {
+                          const cmd = String(toolInput.command).slice(0, 50)
+                          toolInfo += `: ${cmd}${toolInput.command.length > 50 ? '...' : ''}`
+                        }
+                        toolInfo += ']'
+                        toolSummaries.push(toolInfo)
+                      }
+                    }
+
+                    // Combine text and tool summaries
+                    let assistantContent = ''
+                    if (textParts.length > 0) {
+                      assistantContent = textParts.join('\n')
+                    }
+                    if (toolSummaries.length > 0) {
+                      if (assistantContent) {
+                        assistantContent += '\n' + toolSummaries.join(' ')
+                      } else {
+                        assistantContent = toolSummaries.join(' ')
+                      }
+                    }
+                    if (assistantContent) {
+                      historyParts.push(`Assistant: ${assistantContent}`)
+                    }
+                  }
+                }
+                if (historyParts.length > 0) {
+                  // Limit history to last ~10000 chars to avoid context overflow
+                  let history = historyParts.join('\n\n')
+                  if (history.length > 10000) {
+                    history = '...(earlier messages truncated)...\n\n' + history.slice(-10000)
+                  }
+                  historyText = `[CONVERSATION HISTORY]
+${history}
+[/CONVERSATION HISTORY]
+
+`
+                  console.log(`[Ollama] Added ${historyParts.length} messages to history (${history.length} chars)`)
+                }
+              }
+
+              const ollamaContext = `[CONTEXT]
+You are a coding assistant in OFFLINE mode (Ollama model: ${resolvedModel || 'unknown'}).
+Project: ${input.projectPath || input.cwd}
+Working directory: ${input.cwd}
+
+IMPORTANT: When using tools, use these EXACT parameter names:
+- Read: use "file_path" (not "file")
+- Write: use "file_path" and "content"
+- Edit: use "file_path", "old_string", "new_string"
+- Glob: use "pattern" (e.g. "**/*.ts") and optionally "path"
+- Grep: use "pattern" and optionally "path"
+- Bash: use "command"
+
+When asked about the project, use Glob to find files and Read to examine them.
+Be concise and helpful.
+[/CONTEXT]
+
+${historyText}[CURRENT REQUEST]
+${prompt}
+[/CURRENT REQUEST]`
+              finalQueryPrompt = ollamaContext
+              console.log('[Ollama] Context prefix added to prompt')
+            }
+
+            // System prompt config - use preset for both Claude and Ollama
+            const systemPromptConfig = {
+              type: "preset" as const,
+              preset: "claude_code" as const,
+            }
+
             const queryOptions = {
-              prompt,
+              prompt: finalQueryPrompt,
               options: {
                 abortController, // Must be inside options!
                 cwd: input.cwd,
-                systemPrompt: {
-                  type: "preset" as const,
-                  preset: "claude_code" as const,
-                },
-                // Register mentioned agents with SDK via options.agents
-                ...(Object.keys(agentsOption).length > 0 && { agents: agentsOption }),
+                systemPrompt: systemPromptConfig,
+                // Register mentioned agents with SDK via options.agents (skip for Ollama - not supported)
+                ...(!isUsingOllama && Object.keys(agentsOption).length > 0 && { agents: agentsOption }),
                 // Pass filtered MCP servers (only working/unknown ones, skip failed/needs-auth)
                 ...(mcpServersFiltered && Object.keys(mcpServersFiltered).length > 0 && { mcpServers: mcpServersFiltered }),
                 env: finalEnv,
@@ -947,13 +1056,68 @@ export const claudeRouter = router({
                   allowDangerouslySkipPermissions: true,
                 }),
                 includePartialMessages: true,
-                // Load skills from project and user directories (native Claude Code skills)
-                settingSources: ["project" as const, "user" as const],
+                // Load skills from project and user directories (skip for Ollama - not supported)
+                ...(!isUsingOllama && { settingSources: ["project" as const, "user" as const] }),
                 canUseTool: async (
                   toolName: string,
                   toolInput: Record<string, unknown>,
                   options: { toolUseID: string },
                 ) => {
+                  // Fix common parameter mistakes from Ollama models
+                  // Local models often use slightly wrong parameter names
+                  if (isUsingOllama) {
+                    // Read: "file" -> "file_path"
+                    if (toolName === "Read" && toolInput.file && !toolInput.file_path) {
+                      toolInput.file_path = toolInput.file
+                      delete toolInput.file
+                      console.log('[Ollama] Fixed Read tool: file -> file_path')
+                    }
+                    // Write: "file" -> "file_path", "content" is usually correct
+                    if (toolName === "Write" && toolInput.file && !toolInput.file_path) {
+                      toolInput.file_path = toolInput.file
+                      delete toolInput.file
+                      console.log('[Ollama] Fixed Write tool: file -> file_path')
+                    }
+                    // Edit: "file" -> "file_path"
+                    if (toolName === "Edit" && toolInput.file && !toolInput.file_path) {
+                      toolInput.file_path = toolInput.file
+                      delete toolInput.file
+                      console.log('[Ollama] Fixed Edit tool: file -> file_path')
+                    }
+                    // Glob: "path" might be passed as "directory" or "dir"
+                    if (toolName === "Glob") {
+                      if (toolInput.directory && !toolInput.path) {
+                        toolInput.path = toolInput.directory
+                        delete toolInput.directory
+                        console.log('[Ollama] Fixed Glob tool: directory -> path')
+                      }
+                      if (toolInput.dir && !toolInput.path) {
+                        toolInput.path = toolInput.dir
+                        delete toolInput.dir
+                        console.log('[Ollama] Fixed Glob tool: dir -> path')
+                      }
+                    }
+                    // Grep: "query" -> "pattern", "directory" -> "path"
+                    if (toolName === "Grep") {
+                      if (toolInput.query && !toolInput.pattern) {
+                        toolInput.pattern = toolInput.query
+                        delete toolInput.query
+                        console.log('[Ollama] Fixed Grep tool: query -> pattern')
+                      }
+                      if (toolInput.directory && !toolInput.path) {
+                        toolInput.path = toolInput.directory
+                        delete toolInput.directory
+                        console.log('[Ollama] Fixed Grep tool: directory -> path')
+                      }
+                    }
+                    // Bash: "cmd" -> "command"
+                    if (toolName === "Bash" && toolInput.cmd && !toolInput.command) {
+                      toolInput.command = toolInput.cmd
+                      delete toolInput.cmd
+                      console.log('[Ollama] Fixed Bash tool: cmd -> command')
+                    }
+                  }
+
                   if (input.mode === "plan") {
                     if (toolName === "Edit" || toolName === "Write") {
                       const filePath =
