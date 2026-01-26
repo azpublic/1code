@@ -85,6 +85,7 @@ export function AgentsPreferencesTab() {
 
   // Folder picker mutation
   const selectFolderMutation = trpc.settings.selectFolder.useMutation()
+  const setSettingMutation = trpc.settings.set.useMutation()
 
   const handleBrowseFolder = async () => {
     const selectedPath = await selectFolderMutation.mutateAsync()
@@ -92,6 +93,24 @@ export function AgentsPreferencesTab() {
       setDefaultWorktreeBaseLocation(selectedPath)
     }
   }
+
+  // Sync default worktree location to main process whenever it changes
+  useEffect(() => {
+    const syncToMainProcess = async () => {
+      if (defaultWorktreeBaseLocation) {
+        try {
+          await setSettingMutation.mutateAsync({
+            key: "defaultWorktreeBaseLocation",
+            value: defaultWorktreeBaseLocation,
+          })
+          console.log("[Preferences] Synced default worktree location to main process:", defaultWorktreeBaseLocation)
+        } catch (error) {
+          console.error("[Preferences] Failed to sync default worktree location:", error)
+        }
+      }
+    }
+    syncToMainProcess()
+  }, [defaultWorktreeBaseLocation])
 
   return (
     <div className="p-6 space-y-6">

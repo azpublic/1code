@@ -17,7 +17,8 @@ import {
 import { identify, initAnalytics, shutdown } from "./lib/analytics"
 import {
   anthropicOnboardingCompletedAtom, apiKeyOnboardingCompletedAtom,
-  billingMethodAtom
+  billingMethodAtom,
+  defaultWorktreeBaseLocationAtom,
 } from "./lib/atoms"
 import { appStore } from "./lib/jotai-store"
 import { VSCodeThemeProvider } from "./lib/themes/theme-provider"
@@ -53,7 +54,29 @@ function AppContent() {
   const setApiKeyOnboardingCompleted = useSetAtom(apiKeyOnboardingCompletedAtom)
   const selectedProject = useAtomValue(selectedProjectAtom)
   const setSelectedChatId = useSetAtom(selectedAgentChatIdAtom)
+  const defaultWorktreeBaseLocation = useAtomValue(defaultWorktreeBaseLocationAtom)
   const { setActiveSubChat, addToOpenSubChats, setChatId } = useAgentSubChatStore()
+
+  // Sync default worktree location to main process on app startup
+  const settingsSetMutation = trpc.settings.set.useMutation()
+  useEffect(() => {
+    const syncDefaultWorktreeLocation = async () => {
+      if (defaultWorktreeBaseLocation) {
+        try {
+          await settingsSetMutation.mutateAsync({
+            key: "defaultWorktreeBaseLocation",
+            value: defaultWorktreeBaseLocation,
+          })
+          console.log("[App] Synced default worktree location to main process:", defaultWorktreeBaseLocation)
+        } catch (error) {
+          console.error("[App] Failed to sync default worktree location:", error)
+        }
+      }
+    }
+    syncDefaultWorktreeLocation()
+    // Only run once on mount
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
 
   // Apply initial window params (chatId/subChatId) when opening via "Open in new window"
   useEffect(() => {
