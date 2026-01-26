@@ -13,6 +13,10 @@ import {
 import { checkGitLfsAvailable, getShellEnvironment } from "./shell-env";
 import { executeWorktreeSetup } from "./worktree-config";
 import { generateWorktreeFolderName } from "./worktree-naming";
+import { getDatabase } from "../db";
+import { projects } from "../db/schema";
+import { eq } from "drizzle-orm";
+import { getSettingsManager } from "../settings";
 
 const execFileAsync = promisify(execFile);
 
@@ -113,6 +117,52 @@ function isEnoent(error: unknown): boolean {
 		"code" in error &&
 		(error as NodeJS.ErrnoException).code === "ENOENT"
 	);
+}
+
+/**
+ * Get the worktree base location for a specific project.
+ * Priority: project setting → global default → hardcoded fallback
+ *
+ * @param projectId - The project ID to look up
+ * @returns The base directory path for worktrees
+ */
+export async function getWorktreeBaseLocation(projectId: string | undefined): Promise<string> {
+	// 1. Check project-specific override (if projectId provided)
+	if (projectId) {
+		try {
+			const db = getDatabase();
+			const project = db
+				.select({ worktreeBaseLocation: projects.worktreeBaseLocation })
+				.from(projects)
+				.where(eq(projects.id, projectId))
+				.get();
+
+			if (project?.worktreeBaseLocation) {
+				console.log(`[worktree] Using project-specific worktree location: ${project.worktreeBaseLocation}`);
+				return project.worktreeBaseLocation;
+			}
+		} catch (error) {
+			console.warn("[worktree] Failed to look up project worktree location:", error);
+		}
+	}
+
+	// 2. Check global default setting
+	try {
+		const settings = getSettingsManager();
+		const globalDefault = settings.get("defaultWorktreeBaseLocation") as string | null;
+
+		if (globalDefault) {
+			console.log(`[worktree] Using global worktree location: ${globalDefault}`);
+			return globalDefault;
+		}
+	} catch (error) {
+		console.warn("[worktree] Failed to get global worktree location:", error);
+	}
+
+	// 3. Hardcoded fallback
+	const fallback = join(homedir(), ".21st", "worktrees");
+	console.log(`[worktree] Using default worktree location: ${fallback}`);
+	return fallback;
 }
 
 export function generateBranchName(): string {
@@ -901,6 +951,8 @@ export interface WorktreeResult {
  * @param projectSlug - Sanitized project name for worktree directory
  * @param chatId - Chat ID (used for logging)
  * @param selectedBaseBranch - Optional branch to base the worktree off (defaults to auto-detected default branch)
+ * @param branchType - Whether to use local or remote branch as start point
+ * @param projectId - Optional project ID for looking up project-specific worktree location
  */
 export async function createWorktreeForChat(
 	projectPath: string,
@@ -908,6 +960,7 @@ export async function createWorktreeForChat(
 	chatId: string,
 	selectedBaseBranch?: string,
 	branchType?: "local" | "remote",
+	projectId?: string,
 ): Promise<WorktreeResult> {
 	try {
 		const git = simpleGit(projectPath);
@@ -921,7 +974,7 @@ export async function createWorktreeForChat(
 		const baseBranch = selectedBaseBranch || await getDefaultBranch(projectPath);
 
 		const branch = generateBranchName();
-		const worktreesDir = join(homedir(), ".21st", "worktrees");
+		const worktreesDir = await getWorktreeBaseLocation(projectId);
 		const projectWorktreeDir = join(worktreesDir, projectSlug);
 		const folderName = generateWorktreeFolderName(projectWorktreeDir);
 		const worktreePath = join(projectWorktreeDir, folderName);

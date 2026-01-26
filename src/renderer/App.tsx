@@ -22,6 +22,7 @@ import {
 import { appStore } from "./lib/jotai-store"
 import { VSCodeThemeProvider } from "./lib/themes/theme-provider"
 import { trpc } from "./lib/trpc"
+import { initializeSettingsCache } from "./lib/settings-storage"
 
 /**
  * Custom Toaster that adapts to theme
@@ -135,8 +136,13 @@ function AppContent() {
 }
 
 export function App() {
-  // Initialize analytics on mount
+  // Initialize analytics and settings on mount
   useEffect(() => {
+    // Initialize settings cache from main process (non-blocking)
+    initializeSettingsCache().catch((error) => {
+      console.warn("[App] Failed to initialize settings cache:", error)
+    })
+
     initAnalytics()
 
     // Sync analytics opt-out status to main process

@@ -1,6 +1,7 @@
 import { atom } from "jotai"
 import { atomFamily, atomWithStorage } from "jotai/utils"
 import { atomWithWindowStorage } from "../../../lib/window-storage"
+import { createSettingsStorage } from "../../../lib/settings-storage"
 
 // Agent mode type - extensible for future modes like "debug"
 export type AgentMode = "agent" | "plan"
@@ -206,7 +207,7 @@ export const lastSelectedAgentIdAtom = atomWithStorage<string>(
 export const lastSelectedModelIdAtom = atomWithStorage<string>(
   "agents:lastSelectedModelId",
   "sonnet",
-  undefined,
+  createSettingsStorage<string>(),
   { getOnInit: true },
 )
 
@@ -247,7 +248,7 @@ export const agentsSidebarOpenAtom = atomWithWindowStorage<boolean>(
 export const agentsSidebarWidthAtom = atomWithStorage<number>(
   "agents-sidebar-width",
   224,
-  undefined,
+  createSettingsStorage<number>(),
   { getOnInit: true },
 )
 
@@ -255,7 +256,7 @@ export const agentsSidebarWidthAtom = atomWithStorage<number>(
 export const agentsPreviewSidebarWidthAtom = atomWithStorage<number>(
   "agents-preview-sidebar-width",
   500,
-  undefined,
+  createSettingsStorage<number>(),
   { getOnInit: true },
 )
 
@@ -812,4 +813,18 @@ export const workspaceDiffCacheAtomFamily = atomFamily((chatId: string) =>
       })
     },
   ),
+)
+
+// ============ WORKTREE SETTINGS ============
+
+/**
+ * Global default worktree base location
+ * Stored in both settings.json and localStorage (dual-write via createSettingsStorage)
+ * Empty string means use the hardcoded default: ~/.21st/worktrees
+ */
+export const defaultWorktreeBaseLocationAtom = atomWithStorage<string>(
+  "agents:defaultWorktreeBaseLocation",
+  "", // Empty = use hardcoded default
+  createSettingsStorage<string>(),
+  { getOnInit: true },
 )

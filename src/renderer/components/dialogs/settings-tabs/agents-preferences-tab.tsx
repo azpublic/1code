@@ -5,6 +5,7 @@ import {
   autoAdvanceTargetAtom,
   ctrlTabTargetAtom,
   defaultAgentModeAtom,
+  defaultWorktreeBaseLocationAtom,
   desktopNotificationsEnabledAtom,
   extendedThinkingEnabledAtom,
   soundNotificationsEnabledAtom,
@@ -13,6 +14,7 @@ import {
   type CtrlTabTarget,
 } from "../../../lib/atoms"
 import { Kbd } from "../../ui/kbd"
+import { Input } from "../../ui/input"
 import {
   Select,
   SelectContent,
@@ -262,6 +264,43 @@ export function AgentsPreferencesTab() {
                 checked={!analyticsOptOut}
                 onCheckedChange={(enabled) => handleAnalyticsToggle(!enabled)}
               />
+            </div>
+          </div>
+        </div>
+      </div>
+
+      {/* Worktree Settings Section */}
+      <div className="space-y-2">
+        <div className="pb-2">
+          <h4 className="text-sm font-medium text-foreground">Worktree Settings</h4>
+          <p className="text-xs text-muted-foreground mt-1">
+            Configure default location for Git worktrees
+          </p>
+        </div>
+        <div className="bg-background rounded-lg border border-border overflow-hidden">
+          <div className="p-4 space-y-4">
+            {/* Global Default Worktree Location */}
+            <div className="space-y-2">
+              <div>
+                <span className="text-sm font-medium text-foreground">
+                  Default Worktree Location
+                </span>
+                <p className="text-xs text-muted-foreground mt-1">
+                  Global default for all projects. Can be overridden per project.
+                </p>
+              </div>
+              <Input
+                value={defaultWorktreeBaseLocation}
+                onChange={(e) => setDefaultWorktreeBaseLocation(e.target.value)}
+                placeholder="Default: ~/.21st/worktrees"
+                className="font-mono text-sm"
+              />
+              <p className="text-xs text-muted-foreground">
+                Worktrees will be created at:{" "}
+                <code className="bg-muted px-1 py-0.5 rounded">
+                  {defaultWorktreeBaseLocation || "~/.21st/worktrees"}/&lt;project-name&gt;/&lt;worktree-name&gt;
+                </code>
+              </p>
             </div>
           </div>
         </div>

@@ -482,4 +482,28 @@ export const projectsRouter = router({
       const targetPath = join(result.filePaths[0], input.suggestedName)
       return { success: true as const, targetPath }
     }),
+
+  /**
+   * Update project worktree base location
+   * Set to null/undefined to use the global default
+   */
+  updateWorktreeLocation: publicProcedure
+    .input(
+      z.object({
+        projectId: z.string(),
+        worktreeBaseLocation: z.string().nullable().optional(),
+      })
+    )
+    .mutation(({ input }) => {
+      const db = getDatabase()
+      return db
+        .update(projects)
+        .set({
+          worktreeBaseLocation: input.worktreeBaseLocation,
+          updatedAt: new Date(),
+        })
+        .where(eq(projects.id, input.projectId))
+        .returning()
+        .get()
+    }),
 })

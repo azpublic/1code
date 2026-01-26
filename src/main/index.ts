@@ -852,6 +852,15 @@ if (gotTheLock) {
       console.error("[App] Failed to initialize database:", error)
     }
 
+    // Initialize settings manager
+    try {
+      const { initSettingsManager } = await import("./lib/settings")
+      await initSettingsManager()
+      console.log("[App] Settings manager initialized")
+    } catch (error) {
+      console.error("[App] Failed to initialize settings manager:", error)
+    }
+
     // Create main window
     createMainWindow()
 

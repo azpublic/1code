@@ -355,6 +355,7 @@ export const chatsRouter = router({
           chat.id,
           input.baseBranch,
           input.branchType,
+          input.projectId, // Pass projectId for worktree location lookup
         )
         console.log("[chats.create] worktree result:", result)
 

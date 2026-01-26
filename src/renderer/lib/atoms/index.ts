@@ -60,6 +60,9 @@ export {
   // AskUserQuestion
   pendingUserQuestionsAtom,
 
+  // Worktree settings
+  defaultWorktreeBaseLocationAtom,
+
   // Types
   type SavedRepo,
   type SelectedProject,
