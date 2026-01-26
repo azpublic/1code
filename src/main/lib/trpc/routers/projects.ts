@@ -45,7 +45,9 @@ export const projectsRouter = router({
    * Open folder picker and create project
    */
   openFolder: publicProcedure.mutation(async ({ ctx }) => {
+    console.log("[DEBUG] openFolder mutation called")
     const window = ctx.getWindow?.() ?? BrowserWindow.getFocusedWindow()
+    console.log("[DEBUG] Window focused:", window?.isFocused())
 
     if (!window) {
       console.error("[Projects] No window available for folder dialog")
@@ -53,12 +55,13 @@ export const projectsRouter = router({
     }
 
     // Ensure window is focused before showing dialog (fixes first-launch timing issue on macOS)
-    if (!window.isFocused()) {
-      console.log("[Projects] Window not focused, focusing before dialog...")
-      window.focus()
-      // Small delay to ensure focus is applied by the OS
-      await new Promise((resolve) => setTimeout(resolve, 100))
-    }
+    // Always focus and flash frame to ensure dialog is visible on all platforms
+    console.log("[Projects] Focusing window before dialog...")
+    window.focus()
+    // Flash window to get user attention (especially on Windows where dialog might be behind other windows)
+    window.flashFrame(true)
+    // Small delay to ensure focus is applied by the OS
+    await new Promise((resolve) => setTimeout(resolve, 200))
 
     const result = await dialog.showOpenDialog(window, {
       properties: ["openDirectory", "createDirectory"],
@@ -66,12 +69,19 @@ export const projectsRouter = router({
       buttonLabel: "Open Project",
     })
 
+    console.log("[DEBUG] Dialog result:", {
+      canceled: result.canceled,
+      filePaths: result.filePaths
+    })
+
     if (result.canceled || result.filePaths.length === 0) {
+      console.log("[DEBUG] Dialog was canceled or no file paths selected")
       return null
     }
 
     const folderPath = result.filePaths[0]!
     const folderName = basename(folderPath)
+    console.log("[DEBUG] Selected folder:", folderName, "at", folderPath)
 
     // Get git remote info
     const gitInfo = await getGitRemoteInfo(folderPath)
@@ -86,6 +96,7 @@ export const projectsRouter = router({
       .get()
 
     if (existing) {
+      console.log("[DEBUG] Found existing project:", existing.id, existing.name)
       // Update the updatedAt timestamp and git info (in case remote changed)
       const updatedProject = db
         .update(projects)
@@ -106,10 +117,12 @@ export const projectsRouter = router({
         hasGitRemote: !!gitInfo.remoteUrl,
       })
 
+      console.log("[DEBUG] Returning updated project:", updatedProject!.id)
       return updatedProject
     }
 
     // Create new project with git info
+    console.log("[DEBUG] Creating new project...")
     const newProject = db
       .insert(projects)
       .values({
@@ -129,6 +142,7 @@ export const projectsRouter = router({
       hasGitRemote: !!gitInfo.remoteUrl,
     })
 
+    console.log("[DEBUG] Returning new project:", newProject!.id, newProject!.name)
     return newProject
   }),
 

@@ -113,6 +113,23 @@ function AppContent() {
   // 3. API key or custom model selected but not completed -> ApiKeyOnboardingPage
   // 4. No valid project selected -> SelectRepoPage
   // 5. Otherwise -> AgentsLayout
+
+  // Debug logging for routing state
+  console.log("[DEBUG] App routing state:", {
+    billingMethod,
+    anthropicOnboardingCompleted,
+    apiKeyOnboardingCompleted,
+    selectedProject: selectedProject ? { id: selectedProject.id, name: selectedProject.name } : null,
+    validatedProject: validatedProject ? { id: validatedProject.id, name: validatedProject.name } : null,
+    isLoadingProjects,
+    projectsCount: projects?.length,
+    nextPage: !billingMethod ? "BillingMethodPage"
+      : billingMethod === "claude-subscription" && !anthropicOnboardingCompleted ? "AnthropicOnboardingPage"
+      : (billingMethod === "api-key" || billingMethod === "custom-model") && !apiKeyOnboardingCompleted ? "ApiKeyOnboardingPage"
+      : !validatedProject && !isLoadingProjects ? "SelectRepoPage"
+      : "AgentsLayout"
+  })
+
   if (!billingMethod) {
     return <BillingMethodPage />
   }

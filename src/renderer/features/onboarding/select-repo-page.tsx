@@ -21,7 +21,9 @@ export function SelectRepoPage() {
   // Open folder mutation
   const openFolder = trpc.projects.openFolder.useMutation({
     onSuccess: (project) => {
+      console.log("[DEBUG] openFolder onSuccess called with:", project)
       if (project) {
+        console.log("[DEBUG] Setting selectedProject:", project.id, project.name, project.path)
         // Optimistically update the projects list cache
         utils.projects.list.setData(undefined, (oldData) => {
           if (!oldData) return [project]
@@ -47,7 +49,13 @@ export function SelectRepoPage() {
           gitOwner: project.gitOwner,
           gitRepo: project.gitRepo,
         })
+        console.log("[DEBUG] selectedProject set successfully")
+      } else {
+        console.log("[DEBUG] Project was null (user canceled dialog?)")
       }
+    },
+    onError: (err) => {
+      console.error("[DEBUG] openFolder error:", err)
     },
   })
 
