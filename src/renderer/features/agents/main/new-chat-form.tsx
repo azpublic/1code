@@ -2063,6 +2063,13 @@ export function NewChatForm({
                         Settings
                       </Button>
                       <Button
+                        variant="secondary"
+                        size="sm"
+                        onClick={handleConfigureWorktree}
+                      >
+                        Configure Repository
+                      </Button>
+                      <Button
                         size="sm"
                         onClick={() => {
                           const prompt = COMMAND_PROMPTS["worktree-setup"]
