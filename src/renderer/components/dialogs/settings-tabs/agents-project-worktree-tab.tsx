@@ -4,7 +4,7 @@ import { trpc } from "../../../lib/trpc"
 import { Button, buttonVariants } from "../../ui/button"
 import { Input } from "../../ui/input"
 import { Label } from "../../ui/label"
-import { Plus, Trash2, ChevronDown } from "lucide-react"
+import { Plus, Trash2, ChevronDown, FolderOpen } from "lucide-react"
 import { AIPenIcon } from "../../ui/icons"
 import {
   Select,
@@ -258,6 +258,42 @@ export function AgentsProjectWorktreeTab({
           </AlertDialog>
         </div>
       )}
+
+      {/* Worktree Base Location (Per-Project Override) */}
+      <div className="space-y-2">
+        <div className="pb-2">
+          <h4 className="text-sm font-medium text-foreground">
+            Worktree Base Location
+          </h4>
+          <p className="text-xs text-muted-foreground mt-1">
+            Custom base path for this project's worktrees. Leave empty to use global default.
+          </p>
+        </div>
+        <div className="bg-background rounded-lg border border-border overflow-hidden">
+          <div className="p-4 space-y-3">
+            <div className="flex items-center gap-2">
+              <Input
+                value={project?.worktreeBaseLocation || ""}
+                onChange={(e) => {
+                  const location = e.target.value || null
+                  trpc.projects.updateWorktreeLocation.mutate({
+                    projectId,
+                    worktreeBaseLocation: location,
+                  })
+                }}
+                placeholder="Use global default (~/.21st/worktrees)"
+                className="flex-1 font-mono text-sm"
+              />
+            </div>
+            <p className="text-xs text-muted-foreground">
+              Worktrees will be created at:{" "}
+              <code className="bg-muted px-1 py-0.5 rounded">
+                {project?.worktreeBaseLocation || "~/.21st/worktrees"}/{project?.name || "project"}/
+              </code>
+            </p>
+          </div>
+        </div>
+      </div>
 
       {/* Config Location */}
       <div className="space-y-2">

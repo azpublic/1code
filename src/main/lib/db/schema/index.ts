@@ -20,6 +20,8 @@ export const projects = sqliteTable("projects", {
   gitProvider: text("git_provider"), // "github" | "gitlab" | "bitbucket" | null
   gitOwner: text("git_owner"),
   gitRepo: text("git_repo"),
+  // Worktree configuration
+  worktreeBaseLocation: text("worktree_base_location"), // Custom base path for worktrees (overrides global default)
 })
 
 export const projectsRelations = relations(projects, ({ many }) => ({
