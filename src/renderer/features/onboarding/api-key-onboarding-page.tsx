@@ -2,7 +2,7 @@
 
 import { useAtom, useAtomValue, useSetAtom } from "jotai"
 import { useState, useEffect } from "react"
-import { ChevronLeft } from "lucide-react"
+import { Bug, ChevronLeft } from "lucide-react"
 
 import { IconSpinner, KeyFilledIcon, SettingsFilledIcon } from "../../components/ui/icons"
 import { Input } from "../../components/ui/input"
@@ -15,6 +15,7 @@ import {
   type CustomClaudeConfig,
 } from "../../lib/atoms"
 import { cn } from "../../lib/utils"
+import { trpc } from "../../lib/trpc"
 
 // Check if the key looks like a valid Anthropic API key
 const isValidApiKey = (key: string) => {
@@ -27,6 +28,7 @@ export function ApiKeyOnboardingPage() {
   const billingMethod = useAtomValue(billingMethodAtom)
   const setBillingMethod = useSetAtom(billingMethodAtom)
   const setApiKeyOnboardingCompleted = useSetAtom(apiKeyOnboardingCompletedAtom)
+  const openDevToolsMutation = trpc.debug.openDevTools.useMutation()
 
   const isCustomModel = billingMethod === "custom-model"
 
@@ -130,6 +132,15 @@ export function ApiKeyOnboardingPage() {
           <ChevronLeft className="h-5 w-5" />
         </button>
 
+        {/* DevTools Button - fixed in top right corner */}
+        <button
+          onClick={() => openDevToolsMutation.mutate()}
+          className="fixed top-12 right-4 flex items-center justify-center h-8 w-8 rounded-full hover:bg-foreground/5 transition-colors text-muted-foreground hover:text-foreground"
+          title="Open DevTools"
+        >
+          <Bug className="h-4 w-4" />
+        </button>
+
         <div className="w-full max-w-[440px] space-y-8 px-4">
           {/* Header with dual icons */}
           <div className="text-center space-y-4">
@@ -201,6 +212,15 @@ export function ApiKeyOnboardingPage() {
         className="fixed top-12 left-4 flex items-center justify-center h-8 w-8 rounded-full hover:bg-foreground/5 transition-colors"
       >
         <ChevronLeft className="h-5 w-5" />
+      </button>
+
+      {/* DevTools Button - fixed in top right corner */}
+      <button
+        onClick={() => openDevToolsMutation.mutate()}
+        className="fixed top-12 right-4 flex items-center justify-center h-8 w-8 rounded-full hover:bg-foreground/5 transition-colors text-muted-foreground hover:text-foreground"
+        title="Open DevTools"
+      >
+        <Bug className="h-4 w-4" />
       </button>
 
       <div className="w-full max-w-[440px] space-y-8 px-4">

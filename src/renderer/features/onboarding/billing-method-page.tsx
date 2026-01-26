@@ -2,11 +2,12 @@
 
 import { useSetAtom } from "jotai"
 import { useState } from "react"
-import { Check } from "lucide-react"
+import { Bug } from "lucide-react"
 
 import { ClaudeCodeIcon, KeyFilledIcon, SettingsFilledIcon } from "../../components/ui/icons"
 import { billingMethodAtom, type BillingMethod } from "../../lib/atoms"
 import { cn } from "../../lib/utils"
+import { trpc } from "../../lib/trpc"
 
 type BillingOption = {
   id: Exclude<BillingMethod, null>
@@ -43,6 +44,8 @@ export function BillingMethodPage() {
   const [selectedOption, setSelectedOption] =
     useState<Exclude<BillingMethod, null>>("claude-subscription")
 
+  const openDevToolsMutation = trpc.debug.openDevTools.useMutation()
+
   const handleContinue = () => {
     setBillingMethod(selectedOption)
   }
@@ -56,6 +59,15 @@ export function BillingMethodPage() {
       />
 
       <div className="w-full max-w-[440px] space-y-8 px-4">
+        {/* DevTools Button - top right */}
+        <button
+          onClick={() => openDevToolsMutation.mutate()}
+          className="fixed top-12 right-4 flex items-center justify-center h-8 w-8 rounded-full hover:bg-foreground/5 transition-colors text-muted-foreground hover:text-foreground"
+          title="Open DevTools"
+        >
+          <Bug className="h-4 w-4" />
+        </button>
+
         {/* Header */}
         <div className="text-center space-y-1">
           <h1 className="text-base font-semibold tracking-tight">

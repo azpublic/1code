@@ -1,6 +1,6 @@
 import { router, publicProcedure } from "../index"
 import { getDatabase, projects, chats, subChats } from "../../db"
-import { app, shell } from "electron"
+import { app, shell, BrowserWindow } from "electron"
 import { getAuthManager } from "../../../index"
 import { z } from "zod"
 import { clearNetworkCache } from "../../ollama/network-detector"
@@ -129,4 +129,18 @@ export const debugRouter = router({
       console.log(`[Debug] Offline simulation ${input.enabled ? "enabled" : "disabled"}`)
       return { success: true, enabled: simulateOfflineMode }
     }),
+
+  /**
+   * Open DevTools for debugging
+   */
+  openDevTools: publicProcedure.mutation(({ ctx }) => {
+    const window = ctx.getWindow?.() ?? BrowserWindow.getFocusedWindow()
+    if (window) {
+      window.webContents.openDevTools()
+      console.log("[Debug] DevTools opened for window:", window.id)
+      return { success: true }
+    }
+    console.error("[Debug] No window available to open DevTools")
+    return { success: false }
+  }),
 })

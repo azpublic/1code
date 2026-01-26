@@ -12,6 +12,7 @@ import {
   billingMethodAtom,
 } from "../../lib/atoms"
 import { trpc } from "../../lib/trpc"
+import { Bug } from "lucide-react"
 
 type AuthFlowState =
   | { step: "idle" }
@@ -46,6 +47,7 @@ export function AnthropicOnboardingPage() {
     anthropicOnboardingCompletedAtom
   )
   const setBillingMethod = useSetAtom(billingMethodAtom)
+  const openDevToolsMutation = trpc.debug.openDevTools.useMutation()
 
   const handleBack = () => {
     setBillingMethod(null)
@@ -268,6 +270,15 @@ export function AnthropicOnboardingPage() {
         className="fixed top-12 left-4 flex items-center justify-center h-8 w-8 rounded-full hover:bg-foreground/5 transition-colors"
       >
         <ChevronLeft className="h-5 w-5" />
+      </button>
+
+      {/* DevTools Button - fixed in top right corner */}
+      <button
+        onClick={() => openDevToolsMutation.mutate()}
+        className="fixed top-12 right-4 flex items-center justify-center h-8 w-8 rounded-full hover:bg-foreground/5 transition-colors text-muted-foreground hover:text-foreground"
+        title="Open DevTools"
+      >
+        <Bug className="h-4 w-4" />
       </button>
 
       <div className="w-full max-w-[440px] space-y-8 px-4">
