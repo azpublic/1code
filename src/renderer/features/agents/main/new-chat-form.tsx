@@ -1484,10 +1484,18 @@ export function NewChatForm({
         <div className="w-full max-w-2xl space-y-4 md:space-y-6 relative z-10 px-4">
           {/* Title - only show when project is selected */}
           {validatedProject && (
-            <div className="text-center">
+            <div className="text-center space-y-2">
               <h1 className="text-2xl md:text-4xl font-medium tracking-tight">
                 What do you want to get done?
               </h1>
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={handleConfigureWorktree}
+                className="h-7 text-xs text-muted-foreground hover:text-foreground"
+              >
+                Configure Repository
+              </Button>
             </div>
           )}
 
@@ -2061,13 +2069,6 @@ export function NewChatForm({
                         onClick={handleConfigureWorktree}
                       >
                         Settings
-                      </Button>
-                      <Button
-                        variant="secondary"
-                        size="sm"
-                        onClick={handleConfigureWorktree}
-                      >
-                        Configure Repository
                       </Button>
                       <Button
                         size="sm"
