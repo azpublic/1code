@@ -1484,18 +1484,10 @@ export function NewChatForm({
         <div className="w-full max-w-2xl space-y-4 md:space-y-6 relative z-10 px-4">
           {/* Title - only show when project is selected */}
           {validatedProject && (
-            <div className="text-center space-y-2">
+            <div className="text-center">
               <h1 className="text-2xl md:text-4xl font-medium tracking-tight">
                 What do you want to get done?
               </h1>
-              <Button
-                variant="ghost"
-                size="sm"
-                onClick={handleConfigureWorktree}
-                className="h-7 text-xs text-muted-foreground hover:text-foreground"
-              >
-                Configure Repository
-              </Button>
             </div>
           )}
 
@@ -1894,6 +1886,18 @@ export function NewChatForm({
                       onChange={setWorkMode}
                       disabled={createChatMutation.isPending}
                     />
+                  )}
+
+                  {/* Configure Repository button */}
+                  {validatedProject && (
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      onClick={handleConfigureWorktree}
+                      className="h-7 px-2 text-xs text-muted-foreground hover:text-foreground"
+                    >
+                      Configure Repository
+                    </Button>
                   )}
 
                   {/* Branch selector - only visible when worktree mode is selected */}
