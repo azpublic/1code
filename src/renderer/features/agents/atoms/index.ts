@@ -828,3 +828,14 @@ export const defaultWorktreeBaseLocationAtom = atomWithStorage<string>(
   createSettingsStorage<string>(),
   { getOnInit: true },
 )
+
+/**
+ * Interview timeout for AskUserQuestion tool (in seconds)
+ * Stored in both settings.json and localStorage
+ */
+export const interviewTimeoutSecondsAtom = atomWithStorage<number>(
+  "agents:interviewTimeoutSeconds",
+  60, // Default 60 seconds
+  createSettingsStorage<number>(),
+  { getOnInit: true },
+)

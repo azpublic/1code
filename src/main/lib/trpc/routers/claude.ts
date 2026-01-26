@@ -21,6 +21,7 @@ import { createRollbackStash } from "../../git/stash"
 import { ensureMcpTokensFresh, fetchMcpTools, fetchMcpToolsStdio, getMcpAuthStatus, startMcpOAuth } from "../../mcp-auth"
 import { fetchOAuthMetadata, getMcpBaseUrl } from "../../oauth"
 import { setConnectionMethod } from "../../analytics"
+import { getSettingsManager } from "../../settings"
 import { publicProcedure, router } from "../index"
 import { buildAgentsOption } from "./agent-utils"
 
@@ -1090,7 +1091,12 @@ ${prompt}
                       questions: (toolInput as any).questions,
                     } as UIMessageChunk)
 
-                    // Wait for response (60s timeout)
+                    // Get interview timeout from settings (default 60s)
+                    const settings = getSettingsManager()
+                    const interviewTimeoutSeconds = settings.get("interviewTimeoutSeconds") as number | null
+                    const timeoutMs = (interviewTimeoutSeconds || 60) * 1000
+
+                    // Wait for response (configurable timeout)
                     const response = await new Promise<{
                       approved: boolean
                       message?: string
@@ -1105,7 +1111,7 @@ ${prompt}
                           toolUseId: toolUseID,
                         } as UIMessageChunk)
                         resolve({ approved: false, message: "Timed out" })
-                      }, 60000)
+                      }, timeoutMs)
 
                       pendingToolApprovals.set(toolUseID, {
                         subChatId: input.subChatId,
