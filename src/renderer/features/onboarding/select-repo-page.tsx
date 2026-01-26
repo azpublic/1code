@@ -2,21 +2,85 @@
 
 import { useState } from "react"
 import { useAtom } from "jotai"
-import { ChevronLeft } from "lucide-react"
+import { ChevronLeft, FolderOpen } from "lucide-react"
 
 import { IconSpinner, GitHubIcon } from "../../components/ui/icons"
 import { Logo } from "../../components/ui/logo"
 import { Input } from "../../components/ui/input"
 import { trpc } from "../../lib/trpc"
 import { selectedProjectAtom } from "../agents/atoms"
+import { showOfflineModeFeaturesAtom } from "../../lib/atoms"
+import { useAtomValue } from "jotai"
+
+// Helper component to render project icon (avatar or folder)
+function ProjectIcon({
+  gitOwner,
+  gitProvider,
+  className = "h-4 w-4",
+  isOffline = false,
+}: {
+  gitOwner?: string | null
+  gitProvider?: string | null
+  className?: string
+  isOffline?: boolean
+}) {
+  const [isLoaded, setIsLoaded] = useState(false)
+  const [hasError, setHasError] = useState(false)
+
+  const handleLoad = () => setIsLoaded(true)
+  const handleError = () => setHasError(true)
+
+  // In offline mode or on error, don't try to load remote images
+  if (isOffline || hasError || !gitOwner || gitProvider !== "github") {
+    return (
+      <FolderOpen
+        className={`${className} text-muted-foreground flex-shrink-0`}
+      />
+    )
+  }
+
+  return (
+    <div className={`${className} relative flex-shrink-0`}>
+      {/* Placeholder background while loading */}
+      {!isLoaded && (
+        <div className="absolute inset-0 rounded-sm bg-muted" />
+      )}
+      <img
+        src={`https://github.com/${gitOwner}.png?size=64`}
+        alt={gitOwner}
+        className={`${className} rounded-sm flex-shrink-0 ${isLoaded ? 'opacity-100' : 'opacity-0'}`}
+        onLoad={handleLoad}
+        onError={handleError}
+      />
+    </div>
+  )
+}
 
 export function SelectRepoPage() {
   const [, setSelectedProject] = useAtom(selectedProjectAtom)
   const [showClonePage, setShowClonePage] = useState(false)
   const [githubUrl, setGithubUrl] = useState("")
+  const [searchQuery, setSearchQuery] = useState("")
+
+  // Check if offline mode is enabled and if we're actually offline
+  const showOfflineFeatures = useAtomValue(showOfflineModeFeaturesAtom)
+  const { data: ollamaStatus } = trpc.ollama.getStatus.useQuery(undefined, {
+    enabled: showOfflineFeatures,
+  })
+  const isOffline = showOfflineFeatures && ollamaStatus ? !ollamaStatus.internet.online : false
 
   // Get tRPC utils for cache management
   const utils = trpc.useUtils()
+
+  // Fetch existing projects from DB
+  const { data: projects, isLoading: isLoadingProjects } = trpc.projects.list.useQuery()
+
+  // Filter projects by search query
+  const filteredProjects = projects?.filter((p) => {
+    if (!searchQuery.trim()) return true
+    const query = searchQuery.toLowerCase()
+    return p.name.toLowerCase().includes(query) || p.path.toLowerCase().includes(query)
+  }) ?? []
 
   // Open folder mutation
   const openFolder = trpc.projects.openFolder.useMutation({
@@ -100,6 +164,25 @@ export function SelectRepoPage() {
   const handleCloneFromGitHub = async () => {
     if (!githubUrl.trim()) return
     await cloneFromGitHub.mutateAsync({ repoUrl: githubUrl.trim() })
+  }
+
+  const handleSelectProject = (projectId: string) => {
+    const project = projects?.find((p) => p.id === projectId)
+    if (project) {
+      setSelectedProject({
+        id: project.id,
+        name: project.name,
+        path: project.path,
+        gitRemoteUrl: project.gitRemoteUrl,
+        gitProvider: project.gitProvider as
+          | "github"
+          | "gitlab"
+          | "bitbucket"
+          | null,
+        gitOwner: project.gitOwner,
+        gitRepo: project.gitRepo,
+      })
+    }
   }
 
   const handleBack = () => {
@@ -188,7 +271,7 @@ export function SelectRepoPage() {
         style={{ WebkitAppRegion: "drag" } as React.CSSProperties}
       />
 
-      <div className="w-full max-w-[440px] space-y-8 px-4">
+      <div className="w-full max-w-[500px] space-y-6 px-4">
         {/* Header */}
         <div className="text-center space-y-4">
           <div className="flex items-center justify-center mx-auto w-max">
@@ -201,12 +284,52 @@ export function SelectRepoPage() {
               Select a repository
             </h1>
             <p className="text-sm text-muted-foreground">
-              Choose a local folder to start working with
+              Choose a local folder or select an existing project
             </p>
           </div>
         </div>
 
-        {/* Content */}
+        {/* Existing Projects List */}
+        {!isLoadingProjects && filteredProjects.length > 0 && (
+          <div className="space-y-2">
+            <p className="text-xs text-muted-foreground px-1">Recent projects</p>
+            <div className="max-h-[200px] overflow-y-auto rounded-lg border border-border/50 bg-muted/30">
+              {filteredProjects.map((project) => (
+                <button
+                  key={project.id}
+                  onClick={() => handleSelectProject(project.id)}
+                  className="w-full flex items-center gap-2 px-3 py-2 hover:bg-muted/50 transition-colors text-left border-b border-border/30 last:border-0"
+                >
+                  <ProjectIcon
+                    gitOwner={project.gitOwner}
+                    gitProvider={project.gitProvider}
+                    isOffline={isOffline}
+                    className="h-4 w-4"
+                  />
+                  <div className="flex-1 min-w-0">
+                    <div className="text-sm font-medium truncate">{project.name}</div>
+                    <div className="text-xs text-muted-foreground truncate">{project.path}</div>
+                  </div>
+                </button>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {/* Search input when there are projects */}
+        {!isLoadingProjects && (projects?.length ?? 0) > 0 && (
+          <div className="relative">
+            <input
+              type="text"
+              placeholder="Search projects..."
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              className="w-full h-8 px-3 text-sm rounded-lg border border-border bg-background focus:outline-none focus:ring-1 focus:ring-ring"
+            />
+          </div>
+        )}
+
+        {/* Action Buttons */}
         <div className="space-y-3">
           <button
             onClick={handleOpenFolder}
