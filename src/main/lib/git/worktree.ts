@@ -1,6 +1,6 @@
 import { execFile } from "node:child_process";
 import { randomBytes } from "node:crypto";
-import { mkdir, readFile, stat } from "node:fs/promises";
+import { mkdir, readFile, stat, writeFile } from "node:fs/promises";
 import { devNull, homedir } from "node:os";
 import { join } from "node:path";
 import { promisify } from "node:util";
@@ -218,7 +218,9 @@ export async function createWorktree(
 		}
 
 		// Build git worktree add command
-		// Add --sparse flag if exclusions are configured
+		// If we have sparse exclusions, use --no-checkout to avoid copying excluded files
+		// Then we'll set up sparse checkout and only check out the needed files
+		const useSparse = sparseCheckoutExclusions && sparseCheckoutExclusions.length > 0;
 		const worktreeArgs = [
 			"-C",
 			mainRepoPath,
@@ -226,12 +228,13 @@ export async function createWorktree(
 			"add",
 		];
 
-		if (sparseCheckoutExclusions && sparseCheckoutExclusions.length > 0) {
-			worktreeArgs.push("--sparse");
+		if (useSparse) {
+			worktreeArgs.push("--no-checkout");
 		}
 
 		worktreeArgs.push(worktreePath, "-b", branch, commitHash);
 
+		console.log(`[Worktree] Creating worktree${useSparse ? " with --no-checkout (will use sparse checkout)" : ""}...`);
 		await execFileAsync(
 			"git",
 			worktreeArgs,
@@ -239,32 +242,112 @@ export async function createWorktree(
 		);
 
 		// Configure sparse checkout if exclusions are provided
-		if (sparseCheckoutExclusions && sparseCheckoutExclusions.length > 0) {
+		if (useSparse) {
 			console.log(`[Worktree] Configuring sparse checkout with exclusions:`, sparseCheckoutExclusions);
 
-			// First, set to include everything by default
+			// Step 1: Enable sparse checkout and disable cone mode
+			// sparseCheckout must be true to use sparse checkout at all
+			// cone must be false to use negation patterns (!)
 			await execFileAsync(
 				"git",
-				["-C", worktreePath, "sparse-checkout", "set", "/*"],
+				["-C", worktreePath, "config", "core.sparseCheckout", "true"],
+				{ env, timeout: 30_000 },
+			);
+			await execFileAsync(
+				"git",
+				["-C", worktreePath, "config", "core.sparseCheckoutCone", "false"],
 				{ env, timeout: 30_000 },
 			);
 
-			// Then disable each exclusion pattern
+			// Step 2: Get the actual git directory path
+			// In worktrees, .git is a FILE (not a directory) pointing to the actual git dir
+			const gitDirResult = await execFileAsync(
+				"git",
+				["-C", worktreePath, "rev-parse", "--git-dir"],
+				{ env, timeout: 30_000 },
+			);
+			const gitDir = gitDirResult.stdout.trim();
+			const sparseCheckoutFile = join(gitDir, "info", "sparse-checkout");
+
+			console.log(`[Worktree] Git directory: ${gitDir}`);
+			console.log(`[Worktree] Sparse-checkout file: ${sparseCheckoutFile}`);
+
+			// Ensure the info directory exists
+			await mkdir(join(gitDir, "info"), { recursive: true });
+
+			// Build the sparse-checkout content:
+			// - /* matches all files at the root level
+			// - !Exclusion/ patterns exclude specific directories
+			const lines = ["/*"];
 			for (const exclusion of sparseCheckoutExclusions) {
+				lines.push(`!${exclusion}`);
+			}
+			const sparseCheckoutContent = lines.join("\n") + "\n";
+
+			await writeFile(sparseCheckoutFile, sparseCheckoutContent, "utf-8");
+			console.log(`[Worktree] Wrote sparse-checkout patterns:`, lines);
+
+			// Verify the file was written correctly
+			const verifyContent = await readFile(sparseCheckoutFile, "utf-8");
+			console.log(`[Worktree] Sparse-checkout file content:`, verifyContent);
+
+			// Step 3: Checkout HEAD to populate the working directory
+			// Only non-excluded files will be checked out (excluded files are never copied)
+			console.log(`[Worktree] Checking out HEAD with sparse checkout (excluded files won't be copied)...`);
+			await execFileAsync(
+				"git",
+				["-C", worktreePath, "checkout", "HEAD"],
+				{ env, timeout: 120_000 },
+			);
+
+			// Verify sparse checkout is working
+			const statusResult = await execFileAsync(
+				"git",
+				["-C", worktreePath, "status", "--short"],
+				{ env, timeout: 30_000 },
+			);
+			console.log(`[Worktree] Git status after checkout:`, statusResult.stdout);
+
+			// Check if excluded folders exist in the working directory
+			console.log(`[Worktree] Checking if excluded folders exist in worktree...`);
+			for (const exclusion of sparseCheckoutExclusions) {
+				const exclusionPath = join(worktreePath, exclusion);
 				try {
-					await execFileAsync(
-						"git",
-						["-C", worktreePath, "sparse-checkout", "disable", exclusion],
-						{ env, timeout: 30_000 },
-					);
-					console.log(`[Worktree] Excluded from sparse checkout: ${exclusion}`);
-				} catch (error) {
-					console.warn(`[Worktree] Failed to exclude "${exclusion}":`, error);
-					// Continue with other exclusions even if one fails
+					const stats = await stat(exclusionPath);
+					if (stats.isDirectory()) {
+						console.error(`[Worktree] ERROR: Excluded folder EXISTS in worktree: ${exclusionPath}`);
+						// List what's inside to help debug
+						const lsResult = await execFileAsync(
+							"ls",
+							["-la", exclusionPath],
+							{ env, timeout: 10_000 }
+						).catch(() => ({ stdout: "ls failed" }));
+						console.error(`[Worktree] Contents of excluded folder:`, lsResult.stdout);
+					} else if (stats.isFile()) {
+						console.error(`[Worktree] ERROR: Excluded path exists as FILE: ${exclusionPath}`);
+					}
+				} catch (err) {
+					if ((err as NodeJS.ErrnoException).code === "ENOENT") {
+						console.log(`[Worktree] ✓ Excluded folder NOT in worktree (as expected): ${exclusionPath}`);
+					} else {
+						console.warn(`[Worktree] Warning checking ${exclusionPath}:`, err);
+					}
 				}
 			}
 
-			console.log(`[Worktree] Sparse checkout configured successfully`);
+			// List all directories in worktree root for debugging
+			try {
+				const lsResult = await execFileAsync(
+					"ls",
+					["-la", worktreePath],
+					{ env, timeout: 10_000 }
+				);
+				console.log(`[Worktree] All files/folders in worktree root:`, lsResult.stdout);
+			} catch (err) {
+				console.warn(`[Worktree] Could not list worktree contents:`, err);
+			}
+
+			console.log(`[Worktree] Sparse checkout configured successfully - excluded files were never copied`);
 		}
 
 	} catch (error) {
