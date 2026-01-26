@@ -28,6 +28,8 @@ export interface DesktopApi {
   checkForUpdates: (force?: boolean) => Promise<UpdateInfo | null>
   downloadUpdate: () => Promise<boolean>
   installUpdate: () => void
+  getAutoUpdateCheckEnabled: () => Promise<boolean>
+  setAutoUpdateCheckEnabled: (enabled: boolean) => Promise<{ success: boolean; enabled: boolean }>
   onUpdateChecking: (callback: () => void) => () => void
   onUpdateAvailable: (callback: (info: UpdateInfo) => void) => () => void
   onUpdateNotAvailable: (callback: () => void) => () => void

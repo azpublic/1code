@@ -30,6 +30,9 @@ const CDN_BASE = "https://cdn.21st.dev/releases/desktop"
 const MIN_CHECK_INTERVAL = 60 * 1000 // 1 minute
 let lastCheckTime = 0
 
+// Auto-update check enabled state (user preference)
+let autoUpdateCheckEnabled = true
+
 let getAllWindows: (() => BrowserWindow[]) | null = null
 
 /**
@@ -200,7 +203,20 @@ function registerIpcHandlers() {
   ipcMain.handle("update:get-state", () => {
     return {
       currentVersion: app.getVersion(),
+      autoUpdateCheckEnabled,
     }
+  })
+
+  // Set auto-update check enabled state
+  ipcMain.handle("update:set-auto-check", (_event, enabled: boolean) => {
+    autoUpdateCheckEnabled = enabled
+    log.info(`[AutoUpdater] Auto-update check ${enabled ? "enabled" : "disabled"}`)
+    return { success: true, enabled }
+  })
+
+  // Get auto-update check enabled state
+  ipcMain.handle("update:get-auto-check", () => {
+    return autoUpdateCheckEnabled
   })
 }
 
@@ -211,6 +227,12 @@ function registerIpcHandlers() {
 export async function checkForUpdates(force = false) {
   if (!app.isPackaged) {
     log.info("[AutoUpdater] Skipping update check in dev mode")
+    return Promise.resolve(null)
+  }
+
+  // Skip if auto-update check is disabled (unless forced by user)
+  if (!force && !autoUpdateCheckEnabled) {
+    log.info("[AutoUpdater] Auto-update check is disabled")
     return Promise.resolve(null)
   }
 

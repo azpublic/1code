@@ -1,6 +1,6 @@
 import { useEffect, useCallback, useRef } from "react"
-import { useAtom } from "jotai"
-import { updateStateAtom, type UpdateState } from "../atoms"
+import { useAtom, useAtomValue, useSetAtom } from "jotai"
+import { updateStateAtom, autoUpdateCheckEnabledAtom } from "../atoms"
 
 // Note: Update checks are now triggered by window focus in main process (auto-updater.ts)
 // This hook only handles events and provides actions
@@ -130,6 +130,19 @@ export function useUpdateChecker() {
 
   // Note: Periodic checks removed - main process now checks on window focus
   // This is more natural UX and avoids unnecessary network requests
+
+  // Sync auto-update check setting with main process
+  const autoUpdateCheckEnabled = useAtomValue(autoUpdateCheckEnabledAtom)
+  useEffect(() => {
+    const api = window.desktopApi
+    if (!api) return
+
+    // Set initial value on mount
+    api.setAutoUpdateCheckEnabled?.(autoUpdateCheckEnabled)
+
+    // Update when setting changes
+    console.log("[Update] Auto-update check", autoUpdateCheckEnabled ? "enabled" : "disabled")
+  }, [autoUpdateCheckEnabled])
 
   // Actions
   const checkForUpdates = useCallback(() => {

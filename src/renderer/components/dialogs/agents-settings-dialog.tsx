@@ -408,6 +408,13 @@ export function AgentsSettingsDialog({
           {/* Separator */}
           <div className="border-t border-border/50 mx-2" />
 
+          {/* Repositories label */}
+          <div className="px-3 pt-2 pb-1">
+            <span className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">
+              Repositories
+            </span>
+          </div>
+
           <div className="space-y-1">
             {projectTabs.map((tab) => (
               <TabButton
@@ -561,6 +568,13 @@ export function AgentsSettingsDialog({
                     <>
                       {/* Separator */}
                       <div className="border-t border-border/50 mx-2" />
+
+                      {/* Repositories label */}
+                      <div className="px-3 pt-2 pb-1">
+                        <span className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">
+                          Repositories
+                        </span>
+                      </div>
 
                       <div className="space-y-1">
                         {projectTabs.map((tab) => (
