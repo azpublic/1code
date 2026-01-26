@@ -219,8 +219,20 @@ export function AgentsPreferencesTab() {
               value={interviewTimeoutSeconds}
               onChange={(e) => {
                 const value = parseInt(e.target.value, 10)
-                if (!isNaN(value) && value >= 10 && value <= 300) {
+                // Allow any number while typing, will be clamped on blur
+                if (!isNaN(value) && value > 0) {
                   setInterviewTimeoutSeconds(value)
+                }
+              }}
+              onBlur={(e) => {
+                const value = parseInt(e.target.value, 10)
+                // Clamp to valid range on blur
+                if (!isNaN(value)) {
+                  const clamped = Math.max(10, Math.min(300, value))
+                  setInterviewTimeoutSeconds(clamped)
+                } else {
+                  // Reset to default if invalid
+                  setInterviewTimeoutSeconds(60)
                 }
               }}
               className="w-20 h-7 text-sm"
