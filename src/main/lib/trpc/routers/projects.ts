@@ -14,6 +14,24 @@ import { getLaunchDirectory } from "../../cli"
 
 const execAsync = promisify(exec)
 
+/**
+ * Wrapper to run synchronous database operations without blocking the event loop.
+ * On Windows, better-sqlite3 synchronous calls can block the entire process.
+ * This wrapper yields to the event loop before and after the operation.
+ */
+function runDbOperation<T>(operation: () => T): Promise<T> {
+  return new Promise((resolve, reject) => {
+    setImmediate(() => {
+      try {
+        const result = operation()
+        setImmediate(() => resolve(result))
+      } catch (error) {
+        setImmediate(() => reject(error))
+      }
+    })
+  })
+}
+
 export const projectsRouter = router({
   /**
    * Get launch directory from CLI args (consumed once)
@@ -85,20 +103,35 @@ export const projectsRouter = router({
 
     // Get git remote info
     const gitInfo = await getGitRemoteInfo(folderPath)
+    console.log("[DEBUG] Git info received:", gitInfo)
 
     const db = getDatabase()
+    console.log("[DEBUG] Database obtained, starting query...")
 
-    // Check if project already exists
-    const existing = db
-      .select()
-      .from(projects)
-      .where(eq(projects.path, folderPath))
-      .get()
+    // Check if project already exists (wrapped to prevent blocking on Windows)
+    console.log("[DEBUG] About to run SELECT query...")
+    let existing: any = null
+    try {
+      console.log("[DEBUG] Creating query builder...")
+      const query = db
+        .select()
+        .from(projects)
+        .where(eq(projects.path, folderPath))
+      console.log("[DEBUG] Query builder created, calling .get() via wrapper...")
+
+      existing = await runDbOperation(() => query.get())
+      console.log("[DEBUG] .get() returned:", existing ? `found: ${existing.id}` : "not found")
+    } catch (error) {
+      console.error("[DEBUG] Database query error:", error)
+      throw error
+    }
 
     if (existing) {
       console.log("[DEBUG] Found existing project:", existing.id, existing.name)
-      // Update the updatedAt timestamp and git info (in case remote changed)
-      const updatedProject = db
+      console.log("[DEBUG] Updating existing project...")
+
+      // Update the updatedAt timestamp and git info (wrapped to prevent blocking on Windows)
+      const updateQuery = db
         .update(projects)
         .set({
           updatedAt: new Date(),
@@ -109,7 +142,9 @@ export const projectsRouter = router({
         })
         .where(eq(projects.id, existing.id))
         .returning()
-        .get()
+
+      const updatedProject = await runDbOperation(() => updateQuery.get())
+      console.log("[DEBUG] Project updated successfully:", updatedProject!.id)
 
       // Track project opened
       trackProjectOpened({
@@ -122,8 +157,17 @@ export const projectsRouter = router({
     }
 
     // Create new project with git info
-    console.log("[DEBUG] Creating new project...")
-    const newProject = db
+    console.log("[DEBUG] Creating new project with values:", {
+      name: folderName,
+      path: folderPath,
+      gitRemoteUrl: gitInfo.remoteUrl,
+      gitProvider: gitInfo.provider,
+      gitOwner: gitInfo.owner,
+      gitRepo: gitInfo.repo,
+    })
+
+    // Insert wrapped to prevent blocking on Windows
+    const insertQuery = db
       .insert(projects)
       .values({
         name: folderName,
@@ -134,7 +178,9 @@ export const projectsRouter = router({
         gitRepo: gitInfo.repo,
       })
       .returning()
-      .get()
+
+    const newProject = await runDbOperation(() => insertQuery.get())
+    console.log("[DEBUG] New project created successfully:", newProject!.id, newProject!.name)
 
     // Track project opened
     trackProjectOpened({
@@ -514,6 +560,30 @@ export const projectsRouter = router({
         .update(projects)
         .set({
           worktreeBaseLocation: input.worktreeBaseLocation,
+          updatedAt: new Date(),
+        })
+        .where(eq(projects.id, input.projectId))
+        .returning()
+        .get()
+    }),
+
+  /**
+   * Update sparse checkout exclusions for a project
+   * Stores as JSON array of patterns (e.g., ["assets/", "*.png"])
+   */
+  updateSparseCheckoutExclusions: publicProcedure
+    .input(
+      z.object({
+        projectId: z.string(),
+        exclusions: z.array(z.string()).optional(), // Array of patterns like ["assets/", "*.png"]
+      })
+    )
+    .mutation(({ input }) => {
+      const db = getDatabase()
+      return db
+        .update(projects)
+        .set({
+          sparseCheckoutExclusions: input.exclusions ? JSON.stringify(input.exclusions) : null,
           updatedAt: new Date(),
         })
         .where(eq(projects.id, input.projectId))

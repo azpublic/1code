@@ -13,6 +13,7 @@ import {
   type AutoAdvanceTarget,
   type CtrlTabTarget,
 } from "../../../lib/atoms"
+import { Button } from "../../ui/button"
 import { Kbd } from "../../ui/kbd"
 import { Input } from "../../ui/input"
 import {
@@ -22,6 +23,7 @@ import {
   SelectTrigger,
 } from "../../ui/select"
 import { Switch } from "../../ui/switch"
+import { FolderOpen } from "lucide-react"
 import { trpc } from "../../../lib/trpc"
 
 // Hook to detect narrow screen
@@ -51,6 +53,7 @@ export function AgentsPreferencesTab() {
   const [ctrlTabTarget, setCtrlTabTarget] = useAtom(ctrlTabTargetAtom)
   const [autoAdvanceTarget, setAutoAdvanceTarget] = useAtom(autoAdvanceTargetAtom)
   const [defaultAgentMode, setDefaultAgentMode] = useAtom(defaultAgentModeAtom)
+  const [defaultWorktreeBaseLocation, setDefaultWorktreeBaseLocation] = useAtom(defaultWorktreeBaseLocationAtom)
   const isNarrowScreen = useIsNarrowScreen()
 
   // Co-authored-by setting from Claude settings.json
@@ -75,6 +78,16 @@ export function AgentsPreferencesTab() {
       await window.desktopApi?.setAnalyticsOptOut(optedOut)
     } catch (error) {
       console.error("Failed to sync analytics opt-out to main process:", error)
+    }
+  }
+
+  // Folder picker mutation
+  const selectFolderMutation = trpc.settings.selectFolder.useMutation()
+
+  const handleBrowseFolder = async () => {
+    const selectedPath = await selectFolderMutation.mutateAsync()
+    if (selectedPath) {
+      setDefaultWorktreeBaseLocation(selectedPath)
     }
   }
 
@@ -289,12 +302,25 @@ export function AgentsPreferencesTab() {
                   Global default for all projects. Can be overridden per project.
                 </p>
               </div>
-              <Input
-                value={defaultWorktreeBaseLocation}
-                onChange={(e) => setDefaultWorktreeBaseLocation(e.target.value)}
-                placeholder="Default: ~/.21st/worktrees"
-                className="font-mono text-sm"
-              />
+              <div className="flex items-center gap-2">
+                <Input
+                  value={defaultWorktreeBaseLocation}
+                  onChange={(e) => setDefaultWorktreeBaseLocation(e.target.value)}
+                  placeholder="Default: ~/.21st/worktrees"
+                  className="flex-1 font-mono text-sm"
+                />
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  onClick={handleBrowseFolder}
+                  disabled={selectFolderMutation.isPending}
+                  className="shrink-0"
+                >
+                  <FolderOpen className="h-4 w-4" />
+                  Browse
+                </Button>
+              </div>
               <p className="text-xs text-muted-foreground">
                 Worktrees will be created at:{" "}
                 <code className="bg-muted px-1 py-0.5 rounded">
