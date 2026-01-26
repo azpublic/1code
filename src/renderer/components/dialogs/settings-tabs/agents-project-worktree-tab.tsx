@@ -4,6 +4,7 @@ import { trpc } from "../../../lib/trpc"
 import { Button, buttonVariants } from "../../ui/button"
 import { Input } from "../../ui/input"
 import { Label } from "../../ui/label"
+import { Textarea } from "../../ui/textarea"
 import { Plus, Trash2, ChevronDown, FolderOpen } from "lucide-react"
 import { AIPenIcon } from "../../ui/icons"
 import {
@@ -88,10 +89,39 @@ export function AgentsProjectWorktreeTab({
   })
 
   // Get project info
-  const { data: project } = trpc.projects.get.useQuery(
+  const { data: project, refetch: refetchProject } = trpc.projects.get.useQuery(
     { id: projectId },
     { enabled: !!projectId },
   )
+
+  // Update worktree location mutation
+  const updateWorktreeLocationMutation = trpc.projects.updateWorktreeLocation.useMutation({
+    onSuccess: () => {
+      refetchConfig()
+      refetchProject()
+    },
+  })
+
+  // Folder picker mutation
+  const selectFolderMutation = trpc.settings.selectFolder.useMutation()
+
+  const handleBrowseFolder = async () => {
+    const selectedPath = await selectFolderMutation.mutateAsync()
+    if (selectedPath && projectId) {
+      updateWorktreeLocationMutation.mutate({
+        projectId,
+        worktreeBaseLocation: selectedPath,
+      })
+    }
+  }
+
+  // Update sparse checkout exclusions mutation
+  const updateExclusionsMutation = trpc.projects.updateSparseCheckoutExclusions.useMutation({
+    onSuccess: () => {
+      refetchProject()
+      toast.success("Sparse checkout exclusions updated")
+    },
+  })
 
   // Delete project mutation
   const deleteMutation = trpc.projects.delete.useMutation({
@@ -120,6 +150,21 @@ export function AgentsProjectWorktreeTab({
   const [unixCommands, setUnixCommands] = useState<string[]>([])
   const [windowsCommands, setWindowsCommands] = useState<string[]>([])
   const [showPlatformSpecific, setShowPlatformSpecific] = useState(false)
+  const [sparseExclusions, setSparseExclusions] = useState("") // Textarea content (one pattern per line)
+
+  // Sync sparse checkout exclusions from project data
+  useEffect(() => {
+    if (project?.sparseCheckoutExclusions) {
+      try {
+        const exclusions = JSON.parse(project.sparseCheckoutExclusions)
+        setSparseExclusions(exclusions.join("\n"))
+      } catch {
+        setSparseExclusions("")
+      }
+    } else {
+      setSparseExclusions("")
+    }
+  }, [project?.sparseCheckoutExclusions])
 
   // Sync from server data
   useEffect(() => {
@@ -276,7 +321,7 @@ export function AgentsProjectWorktreeTab({
                 value={project?.worktreeBaseLocation || ""}
                 onChange={(e) => {
                   const location = e.target.value || null
-                  trpc.projects.updateWorktreeLocation.mutate({
+                  updateWorktreeLocationMutation.mutate({
                     projectId,
                     worktreeBaseLocation: location,
                   })
@@ -284,6 +329,17 @@ export function AgentsProjectWorktreeTab({
                 placeholder="Use global default (~/.21st/worktrees)"
                 className="flex-1 font-mono text-sm"
               />
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                onClick={handleBrowseFolder}
+                disabled={selectFolderMutation.isPending}
+                className="shrink-0"
+              >
+                <FolderOpen className="h-4 w-4" />
+                Browse
+              </Button>
             </div>
             <p className="text-xs text-muted-foreground">
               Worktrees will be created at:{" "}
@@ -291,6 +347,60 @@ export function AgentsProjectWorktreeTab({
                 {project?.worktreeBaseLocation || "~/.21st/worktrees"}/{project?.name || "project"}/
               </code>
             </p>
+          </div>
+        </div>
+      </div>
+
+      {/* Sparse Checkout Exclusions */}
+      <div className="space-y-2">
+        <div className="pb-2">
+          <h4 className="text-sm font-medium text-foreground">
+            Sparse Checkout Exclusions
+          </h4>
+          <p className="text-xs text-muted-foreground mt-1">
+            Exclude large folders (assets, images, etc.) from worktrees to save space and improve performance.
+          </p>
+        </div>
+        <div className="bg-background rounded-lg border border-border overflow-hidden">
+          <div className="p-4 space-y-3">
+            <div>
+              <Label className="text-sm font-medium">Excluded Folders & Patterns</Label>
+              <p className="text-xs text-muted-foreground mt-1">
+                Enter one pattern per line. Examples: <code className="bg-muted px-1 py-0.5 rounded">assets/</code>, <code className="bg-muted px-1 py-0.5 rounded">*.png</code>, <code className="bg-muted px-1 py-0.5 rounded">node_modules/</code>
+              </p>
+            </div>
+            <Textarea
+              value={sparseExclusions}
+              onChange={(e) => setSparseExclusions(e.target.value)}
+              placeholder="assets/\nContent/\n*.png\n*.jpg\n*.mp4\nnode_modules/"
+              className="font-mono text-sm min-h-[100px] resize-y"
+            />
+            <div className="flex items-center justify-between">
+              <p className="text-xs text-muted-foreground">
+                {sparseExclusions
+                  ? `${sparseExclusions.split("\n").filter(Boolean).length} pattern(s) configured`
+                  : "No exclusions - full checkout"}
+              </p>
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                onClick={() => {
+                  const exclusions = sparseExclusions
+                    .split("\n")
+                    .map((s) => s.trim())
+                    .filter(Boolean)
+
+                  updateExclusionsMutation.mutate({
+                    projectId,
+                    exclusions: exclusions.length > 0 ? exclusions : undefined,
+                  })
+                }}
+                disabled={updateExclusionsMutation.isPending}
+              >
+                {updateExclusionsMutation.isPending ? "Saving..." : "Save Exclusions"}
+              </Button>
+            </div>
           </div>
         </div>
       </div>

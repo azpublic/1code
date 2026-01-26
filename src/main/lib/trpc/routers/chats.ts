@@ -293,6 +293,19 @@ export const chatsRouter = router({
       console.log("[chats.create] found project:", project)
       if (!project) throw new Error("Project not found")
 
+      // Check if project is a git repository (for worktree mode)
+      const warnings: string[] = []
+      if (input.useWorktree) {
+        const git = require("simple-git")(project.path)
+        const isRepo = await git.checkIsRepo().catch(() => false)
+        if (!isRepo) {
+          warnings.push(
+            "Selected folder is not a git repository. Workspace will be created in local mode."
+          )
+          console.log("[chats.create] Project is not a git repository, forcing local mode")
+        }
+      }
+
       // Create chat (fast path)
       const chat = db
         .insert(chats)
@@ -375,6 +388,9 @@ export const chatsRouter = router({
           }
         } else {
           console.warn(`[Worktree] Failed: ${result.error}`)
+          warnings.push(
+            `Failed to create worktree: ${result.error || "Unknown error"}. Workspace will be created in local mode.`
+          )
           // Fallback to project path
           db.update(chats)
             .set({ worktreePath: project.path })
@@ -398,6 +414,7 @@ export const chatsRouter = router({
         branch: worktreeResult.branch,
         baseBranch: worktreeResult.baseBranch,
         subChats: [subChat],
+        warnings: warnings.length > 0 ? warnings : undefined,
       }
 
       // Track workspace created

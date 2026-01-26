@@ -22,6 +22,7 @@ export const projects = sqliteTable("projects", {
   gitRepo: text("git_repo"),
   // Worktree configuration
   worktreeBaseLocation: text("worktree_base_location"), // Custom base path for worktrees (overrides global default)
+  sparseCheckoutExclusions: text("sparse_checkout_exclusions"), // JSON array of patterns to exclude (e.g., ["assets/", "*.png"])
 })
 
 export const projectsRelations = relations(projects, ({ many }) => ({

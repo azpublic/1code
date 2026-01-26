@@ -54,9 +54,12 @@ export interface GitRemoteInfo {
  */
 async function isGitRepo(path: string): Promise<boolean> {
 	try {
+		console.log("[DEBUG] [isGitRepo] Checking if path is git repo:", path);
 		await execAsync("git rev-parse --git-dir", { cwd: path });
+		console.log("[DEBUG] [isGitRepo] Path is a git repo");
 		return true;
-	} catch {
+	} catch (error) {
+		console.log("[DEBUG] [isGitRepo] Path is NOT a git repo:", error);
 		return false;
 	}
 }
@@ -129,6 +132,7 @@ function parseGitRemoteUrl(url: string): Omit<GitRemoteInfo, "remoteUrl"> {
 export async function getGitRemoteInfo(
 	projectPath: string,
 ): Promise<GitRemoteInfo> {
+	console.log("[DEBUG] [getGitRemoteInfo] Starting for path:", projectPath);
 	const emptyResult: GitRemoteInfo = {
 		remoteUrl: null,
 		provider: null,
@@ -139,28 +143,34 @@ export async function getGitRemoteInfo(
 	// Check if it's a git repo
 	const isRepo = await isGitRepo(projectPath);
 	if (!isRepo) {
+		console.log("[DEBUG] [getGitRemoteInfo] Not a git repo, returning empty result");
 		return emptyResult;
 	}
 
 	try {
+		console.log("[DEBUG] [getGitRemoteInfo] Getting remote URL for origin...");
 		// Get the remote URL for origin
 		const { stdout } = await execAsync("git remote get-url origin", {
 			cwd: projectPath,
 		});
+		console.log("[DEBUG] [getGitRemoteInfo] Got remote URL:", stdout.trim());
 
 		const remoteUrl = stdout.trim();
 		if (!remoteUrl) {
+			console.log("[DEBUG] [getGitRemoteInfo] No remote URL found, returning empty result");
 			return emptyResult;
 		}
 
 		const parsed = parseGitRemoteUrl(remoteUrl);
+		console.log("[DEBUG] [getGitRemoteInfo] Parsed remote info:", parsed);
 
 		return {
 			remoteUrl,
 			...parsed,
 		};
-	} catch {
+	} catch (error) {
 		// No remote configured or other error
+		console.log("[DEBUG] [getGitRemoteInfo] Error getting remote:", error);
 		return emptyResult;
 	}
 }

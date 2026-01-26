@@ -182,6 +182,7 @@ export async function createWorktree(
 	branch: string,
 	worktreePath: string,
 	startPoint = "origin/main",
+	sparseCheckoutExclusions: string[] | null = null,
 ): Promise<void> {
 	const usesLfs = await repoUsesLfs(mainRepoPath);
 
@@ -216,20 +217,55 @@ export async function createWorktree(
 			}
 		}
 
+		// Build git worktree add command
+		// Add --sparse flag if exclusions are configured
+		const worktreeArgs = [
+			"-C",
+			mainRepoPath,
+			"worktree",
+			"add",
+		];
+
+		if (sparseCheckoutExclusions && sparseCheckoutExclusions.length > 0) {
+			worktreeArgs.push("--sparse");
+		}
+
+		worktreeArgs.push(worktreePath, "-b", branch, commitHash);
+
 		await execFileAsync(
 			"git",
-			[
-				"-C",
-				mainRepoPath,
-				"worktree",
-				"add",
-				worktreePath,
-				"-b",
-				branch,
-				commitHash,
-			],
+			worktreeArgs,
 			{ env, timeout: 120_000 },
 		);
+
+		// Configure sparse checkout if exclusions are provided
+		if (sparseCheckoutExclusions && sparseCheckoutExclusions.length > 0) {
+			console.log(`[Worktree] Configuring sparse checkout with exclusions:`, sparseCheckoutExclusions);
+
+			// First, set to include everything by default
+			await execFileAsync(
+				"git",
+				["-C", worktreePath, "sparse-checkout", "set", "/*"],
+				{ env, timeout: 30_000 },
+			);
+
+			// Then disable each exclusion pattern
+			for (const exclusion of sparseCheckoutExclusions) {
+				try {
+					await execFileAsync(
+						"git",
+						["-C", worktreePath, "sparse-checkout", "disable", exclusion],
+						{ env, timeout: 30_000 },
+					);
+					console.log(`[Worktree] Excluded from sparse checkout: ${exclusion}`);
+				} catch (error) {
+					console.warn(`[Worktree] Failed to exclude "${exclusion}":`, error);
+					// Continue with other exclusions even if one fails
+				}
+			}
+
+			console.log(`[Worktree] Sparse checkout configured successfully`);
+		}
 
 	} catch (error) {
 		const errorMessage = error instanceof Error ? error.message : String(error);
@@ -952,7 +988,7 @@ export interface WorktreeResult {
  * @param chatId - Chat ID (used for logging)
  * @param selectedBaseBranch - Optional branch to base the worktree off (defaults to auto-detected default branch)
  * @param branchType - Whether to use local or remote branch as start point
- * @param projectId - Optional project ID for looking up project-specific worktree location
+ * @param projectId - Optional project ID for looking up project-specific worktree location and sparse checkout exclusions
  */
 export async function createWorktreeForChat(
 	projectPath: string,
@@ -984,7 +1020,29 @@ export async function createWorktreeForChat(
 		// For remote branches or when type is not specified, use origin/{branch}
 		const startPoint = branchType === "local" ? baseBranch : `origin/${baseBranch}`;
 
-		await createWorktree(projectPath, branch, worktreePath, startPoint);
+		// Get sparse checkout exclusions if projectId is provided
+		let sparseCheckoutExclusions: string[] | null = null;
+		if (projectId) {
+			const db = getDatabase();
+			const project = db
+				.select({
+					sparseCheckoutExclusions: projects.sparseCheckoutExclusions,
+				})
+				.from(projects)
+				.where(eq(projects.id, projectId))
+				.get();
+
+			if (project?.sparseCheckoutExclusions) {
+				try {
+					sparseCheckoutExclusions = JSON.parse(project.sparseCheckoutExclusions) as string[];
+					console.log(`[Worktree] Using sparse checkout exclusions:`, sparseCheckoutExclusions);
+				} catch (error) {
+					console.warn(`[Worktree] Failed to parse sparseCheckoutExclusions:`, error);
+				}
+			}
+		}
+
+		await createWorktree(projectPath, branch, worktreePath, startPoint, sparseCheckoutExclusions);
 
 		// Run worktree setup commands in BACKGROUND (don't block chat creation)
 		// This allows the user to start chatting immediately while deps install

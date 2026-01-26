@@ -892,6 +892,13 @@ export function NewChatForm({
         ids.push(data.subChats[0].id)
       }
       setJustCreatedIds((prev) => new Set([...prev, ...ids]))
+
+      // Show warnings if worktree creation fell back to local mode
+      if (data.warnings && data.warnings.length > 0) {
+        data.warnings.forEach((warning) => {
+          toast.warning(warning)
+        })
+      }
     },
     onError: (error) => {
       toast.error(error.message)
