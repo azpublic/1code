@@ -67,8 +67,8 @@ export function AgentsProjectWorktreeTab({
 
   // Save mutation
   const saveMutation = trpc.worktreeConfig.save.useMutation({
-    onSuccess: () => {
-      toast.success("Worktree config saved")
+    onSuccess: (data) => {
+      toast.success(`Saved to ${data.path}`)
       refetchConfig()
     },
     onError: (err) => {

@@ -108,12 +108,13 @@ export async function getAvailableConfigPaths(
 /**
  * Save worktree config to a file
  * Creates parent directories if needed
+ * @throws Error if file write fails
  */
 export async function saveWorktreeConfig(
   projectPath: string,
   config: WorktreeConfig,
   target: "cursor" | "1code" | string = "1code",
-): Promise<{ success: boolean; path: string; error?: string }> {
+): Promise<{ path: string }> {
   let targetPath: string
 
   if (target === "cursor") {
@@ -125,22 +126,16 @@ export async function saveWorktreeConfig(
     targetPath = isAbsolute(target) ? target : join(projectPath, target)
   }
 
-  try {
-    // Create parent directory
-    await mkdir(dirname(targetPath), { recursive: true })
+  // Create parent directory
+  await mkdir(dirname(targetPath), { recursive: true })
 
-    // Write config
-    const content = JSON.stringify(config, null, 2)
-    await writeFile(targetPath, content, "utf-8")
+  // Write config
+  const content = JSON.stringify(config, null, 2)
+  await writeFile(targetPath, content, "utf-8")
 
-    return { success: true, path: targetPath }
-  } catch (error) {
-    return {
-      success: false,
-      path: targetPath,
-      error: error instanceof Error ? error.message : "Unknown error",
-    }
-  }
+  console.log(`[worktree-config] Saved config to ${targetPath}`)
+
+  return { path: targetPath }
 }
 
 /**
