@@ -2,7 +2,7 @@
 
 import { useVirtualizer } from "@tanstack/react-virtual"
 import { useAtom, useAtomValue, useSetAtom } from "jotai"
-import { AlignJustify, Plus, Zap } from "lucide-react"
+import { AlignJustify, Cog, Plus, Zap } from "lucide-react"
 import { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import { createPortal } from "react-dom"
 import { Button } from "../../../components/ui/button"
@@ -1888,18 +1888,6 @@ export function NewChatForm({
                     />
                   )}
 
-                  {/* Configure Repository button */}
-                  {validatedProject && (
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      onClick={handleConfigureWorktree}
-                      className="h-7 px-2 text-xs text-muted-foreground hover:text-foreground"
-                    >
-                      Configure Repository
-                    </Button>
-                  )}
-
                   {/* Branch selector - only visible when worktree mode is selected */}
                   {validatedProject && workMode === "worktree" && (
                     <Popover
@@ -2041,6 +2029,19 @@ export function NewChatForm({
                         )}
                       </PopoverContent>
                     </Popover>
+                  )}
+
+                  {/* Configure Repository button */}
+                  {validatedProject && (
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      onClick={handleConfigureWorktree}
+                      className="h-7 px-2 text-xs text-muted-foreground hover:text-foreground"
+                    >
+                      <Cog className="w-4 h-4" />
+                      <span>Configure Repository</span>
+                    </Button>
                   )}
 
                   {/* Create Branch Dialog */}

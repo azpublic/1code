@@ -33,6 +33,8 @@ contextBridge.exposeInMainWorld("desktopApi", {
   checkForUpdates: (force?: boolean) => ipcRenderer.invoke("update:check", force),
   downloadUpdate: () => ipcRenderer.invoke("update:download"),
   installUpdate: () => ipcRenderer.invoke("update:install"),
+  getAutoUpdateCheckEnabled: () => ipcRenderer.invoke("update:get-auto-check"),
+  setAutoUpdateCheckEnabled: (enabled: boolean) => ipcRenderer.invoke("update:set-auto-check", enabled),
 
   // Auto-update event listeners
   onUpdateChecking: (callback: () => void) => {

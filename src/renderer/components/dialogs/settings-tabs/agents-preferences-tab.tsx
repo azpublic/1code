@@ -3,6 +3,7 @@ import { useEffect, useState } from "react"
 import {
   analyticsOptOutAtom,
   autoAdvanceTargetAtom,
+  autoUpdateCheckEnabledAtom,
   ctrlTabTargetAtom,
   defaultAgentModeAtom,
   defaultWorktreeBaseLocationAtom,
@@ -49,6 +50,7 @@ export function AgentsPreferencesTab() {
   )
   const [soundEnabled, setSoundEnabled] = useAtom(soundNotificationsEnabledAtom)
   const [desktopNotificationsEnabled, setDesktopNotificationsEnabled] = useAtom(desktopNotificationsEnabledAtom)
+  const [autoUpdateCheckEnabled, setAutoUpdateCheckEnabled] = useAtom(autoUpdateCheckEnabledAtom)
   const [analyticsOptOut, setAnalyticsOptOut] = useAtom(analyticsOptOutAtom)
   const [ctrlTabTarget, setCtrlTabTarget] = useAtom(ctrlTabTargetAtom)
   const [autoAdvanceTarget, setAutoAdvanceTarget] = useAtom(autoAdvanceTargetAtom)
@@ -148,6 +150,19 @@ export function AgentsPreferencesTab() {
               </span>
             </div>
             <Switch checked={soundEnabled} onCheckedChange={setSoundEnabled} />
+          </div>
+
+          {/* Auto-Update Check Toggle */}
+          <div className="flex items-start justify-between">
+            <div className="flex flex-col space-y-1">
+              <span className="text-sm font-medium text-foreground">
+                Auto-Update Check
+              </span>
+              <span className="text-xs text-muted-foreground">
+                Automatically check for updates on startup and window focus
+              </span>
+            </div>
+            <Switch checked={autoUpdateCheckEnabled} onCheckedChange={setAutoUpdateCheckEnabled} />
           </div>
 
           {/* Co-Authored-By Toggle */}

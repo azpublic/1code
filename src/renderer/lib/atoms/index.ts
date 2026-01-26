@@ -294,6 +294,14 @@ export const showOfflineModeFeaturesAtom = atomWithStorage<boolean>(
   { getOnInit: true },
 )
 
+// Auto-update check enabled (user preference for automatic update checks)
+export const autoUpdateCheckEnabledAtom = atomWithStorage<boolean>(
+  "agents:auto-update-check-enabled",
+  true, // Enabled by default
+  undefined,
+  { getOnInit: true },
+)
+
 // Network status (updated from main process)
 export const networkOnlineAtom = atom<boolean>(true)
 
