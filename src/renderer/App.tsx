@@ -19,6 +19,7 @@ import {
   anthropicOnboardingCompletedAtom, apiKeyOnboardingCompletedAtom,
   billingMethodAtom,
   defaultWorktreeBaseLocationAtom,
+  interviewTimeoutSecondsAtom,
 } from "./lib/atoms"
 import { appStore } from "./lib/jotai-store"
 import { VSCodeThemeProvider } from "./lib/themes/theme-provider"
@@ -55,12 +56,14 @@ function AppContent() {
   const selectedProject = useAtomValue(selectedProjectAtom)
   const setSelectedChatId = useSetAtom(selectedAgentChatIdAtom)
   const defaultWorktreeBaseLocation = useAtomValue(defaultWorktreeBaseLocationAtom)
+  const interviewTimeoutSeconds = useAtomValue(interviewTimeoutSecondsAtom)
   const { setActiveSubChat, addToOpenSubChats, setChatId } = useAgentSubChatStore()
 
-  // Sync default worktree location to main process on app startup
+  // Sync default worktree location and interview timeout to main process on app startup
   const settingsSetMutation = trpc.settings.set.useMutation()
   useEffect(() => {
-    const syncDefaultWorktreeLocation = async () => {
+    const syncSettings = async () => {
+      // Sync default worktree location
       if (defaultWorktreeBaseLocation) {
         try {
           await settingsSetMutation.mutateAsync({
@@ -72,8 +75,18 @@ function AppContent() {
           console.error("[App] Failed to sync default worktree location:", error)
         }
       }
+      // Sync interview timeout
+      try {
+        await settingsSetMutation.mutateAsync({
+          key: "interviewTimeoutSeconds",
+          value: interviewTimeoutSeconds,
+        })
+        console.log("[App] Synced interview timeout to main process:", interviewTimeoutSeconds)
+      } catch (error) {
+        console.error("[App] Failed to sync interview timeout:", error)
+      }
     }
-    syncDefaultWorktreeLocation()
+    syncSettings()
     // Only run once on mount
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])

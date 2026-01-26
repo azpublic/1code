@@ -9,6 +9,7 @@ import {
   defaultWorktreeBaseLocationAtom,
   desktopNotificationsEnabledAtom,
   extendedThinkingEnabledAtom,
+  interviewTimeoutSecondsAtom,
   soundNotificationsEnabledAtom,
   type AgentMode,
   type AutoAdvanceTarget,
@@ -56,6 +57,7 @@ export function AgentsPreferencesTab() {
   const [autoAdvanceTarget, setAutoAdvanceTarget] = useAtom(autoAdvanceTargetAtom)
   const [defaultAgentMode, setDefaultAgentMode] = useAtom(defaultAgentModeAtom)
   const [defaultWorktreeBaseLocation, setDefaultWorktreeBaseLocation] = useAtom(defaultWorktreeBaseLocationAtom)
+  const [interviewTimeoutSeconds, setInterviewTimeoutSeconds] = useAtom(interviewTimeoutSecondsAtom)
   const isNarrowScreen = useIsNarrowScreen()
 
   // Co-authored-by setting from Claude settings.json
@@ -111,6 +113,22 @@ export function AgentsPreferencesTab() {
     }
     syncToMainProcess()
   }, [defaultWorktreeBaseLocation])
+
+  // Sync interview timeout to main process whenever it changes
+  useEffect(() => {
+    const syncToMainProcess = async () => {
+      try {
+        await setSettingMutation.mutateAsync({
+          key: "interviewTimeoutSeconds",
+          value: interviewTimeoutSeconds,
+        })
+        console.log("[Preferences] Synced interview timeout to main process:", interviewTimeoutSeconds)
+      } catch (error) {
+        console.error("[Preferences] Failed to sync interview timeout:", error)
+      }
+    }
+    syncToMainProcess()
+  }, [interviewTimeoutSeconds])
 
   return (
     <div className="p-6 space-y-6">
@@ -182,6 +200,31 @@ export function AgentsPreferencesTab() {
               </span>
             </div>
             <Switch checked={autoUpdateCheckEnabled} onCheckedChange={setAutoUpdateCheckEnabled} />
+          </div>
+
+          {/* Interview Timeout */}
+          <div className="flex items-start justify-between">
+            <div className="flex flex-col space-y-1">
+              <span className="text-sm font-medium text-foreground">
+                Interview Timeout
+              </span>
+              <span className="text-xs text-muted-foreground">
+                Time to answer agent questions (seconds, 10-300)
+              </span>
+            </div>
+            <Input
+              type="number"
+              min={10}
+              max={300}
+              value={interviewTimeoutSeconds}
+              onChange={(e) => {
+                const value = parseInt(e.target.value, 10)
+                if (!isNaN(value) && value >= 10 && value <= 300) {
+                  setInterviewTimeoutSeconds(value)
+                }
+              }}
+              className="w-20 h-7 text-sm"
+            />
           </div>
 
           {/* Co-Authored-By Toggle */}

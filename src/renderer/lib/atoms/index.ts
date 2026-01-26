@@ -63,6 +63,9 @@ export {
   // Worktree settings
   defaultWorktreeBaseLocationAtom,
 
+  // Interview settings
+  interviewTimeoutSecondsAtom,
+
   // Types
   type SavedRepo,
   type SelectedProject,
