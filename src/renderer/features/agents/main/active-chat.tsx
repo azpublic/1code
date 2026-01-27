@@ -5210,6 +5210,11 @@ export function ChatView({
     }
   }, [chatId, setPendingPrMessage])
 
+  // Handle commit success - refresh diff stats after direct commit
+  const handleCommitSuccess = useCallback(() => {
+    fetchDiffStats()
+  }, [fetchDiffStats])
+
   // Handle Review - sends a message to Claude to review the diff
   const setPendingReviewMessage = useSetAtom(pendingReviewMessageAtom)
 
@@ -6758,6 +6763,7 @@ Make sure to preserve all functionality from both branches when resolving confli
             parsedFileDiffs={parsedFileDiffs}
             onCommit={handleCommitToPr}
             isCommitting={isCommittingToPr}
+            onCommitSuccess={handleCommitSuccess}
             onExpandTerminal={() => setIsTerminalSidebarOpen(true)}
             onExpandPlan={() => setIsPlanSidebarOpen(true)}
             onExpandDiff={() => setIsDiffSidebarOpen(true)}

@@ -21,6 +21,10 @@ import {
   getFileDir,
 } from "@/features/changes/components/file-list-item"
 import { trpc } from "@/lib/trpc"
+import { toast } from "sonner"
+import { useQueryClient } from "@tanstack/react-query"
+import { useAtomValue } from "jotai"
+import { selectedOllamaModelAtom } from "@/lib/atoms"
 import type { ParsedDiffFile } from "../types"
 
 interface ChangesWidgetProps {
@@ -35,6 +39,8 @@ interface ChangesWidgetProps {
   onFileSelect?: (filePath: string) => void
   /** Diff display mode - affects tooltip text */
   diffDisplayMode?: "side-peek" | "center-peek" | "full-page"
+  /** Called after a successful direct commit to refresh UI state */
+  onCommitSuccess?: () => void
 }
 
 /**
@@ -71,6 +77,7 @@ export const ChangesWidget = memo(function ChangesWidget({
   onExpand,
   onFileSelect,
   diffDisplayMode = "side-peek",
+  onCommitSuccess,
 }: ChangesWidgetProps) {
   // Data is now cached at the ActiveChat level via workspaceDiffCacheAtomFamily
   // So parsedFileDiffs and diffStats persist across workspace switches
@@ -92,8 +99,27 @@ export const ChangesWidget = memo(function ChangesWidget({
   // Viewed files state (same atom as diff sidebar)
   const [viewedFiles] = useAtom(viewedFilesAtomFamily(chatId))
 
+  // Query client for invalidating queries after commit
+  const queryClient = useQueryClient()
+  const selectedOllamaModel = useAtomValue(selectedOllamaModelAtom)
+
   // Mutations for context menu actions
   const openInFinderMutation = trpc.external.openInFinder.useMutation()
+
+  // Mutations for direct commit
+  const generateCommitMutation = trpc.chats.generateCommitMessage.useMutation()
+  const atomicCommitMutation = trpc.changes.atomicCommit.useMutation({
+    onSuccess: () => {
+      toast.success("Changes committed")
+      // Invalidate the changes.getStatus query to force a fresh fetch
+      queryClient.invalidateQueries({ queryKey: [["changes", "getStatus"]] })
+      onCommitSuccess?.()
+    },
+    onError: (error) => toast.error(`Commit failed: ${error.message}`),
+  })
+
+  // State for direct commit loading
+  const [isDirectCommitting, setIsDirectCommitting] = useState(false)
 
   // Selection state - all files selected by default
   const [selectedForCommit, setSelectedForCommit] = useState<Set<string>>(new Set())
@@ -176,13 +202,46 @@ export const ChangesWidget = memo(function ChangesWidget({
     }
   }, [allSelected, displayFiles, getDisplayPath])
 
-  // Handle commit
-  const handleCommit = useCallback(() => {
+  // Handle direct commit (new behavior - mimics diff view commit button)
+  const handleCommit = useCallback(async () => {
+    if (!worktreePath) return
+
+    const selectedPaths = displayFiles
+      .filter((f) => selectedForCommit.has(getDisplayPath(f)))
+      .map((f) => getDisplayPath(f))
+
+    if (selectedPaths.length === 0) return
+
+    setIsDirectCommitting(true)
+    try {
+      // Generate AI commit message
+      const result = await generateCommitMutation.mutateAsync({
+        chatId,
+        filePaths: selectedPaths,
+        ollamaModel: selectedOllamaModel,
+      })
+
+      // Commit with the generated message
+      await atomicCommitMutation.mutateAsync({
+        worktreePath,
+        filePaths: selectedPaths,
+        message: result.message,
+      })
+    } catch (error) {
+      console.error("Failed to commit:", error)
+      // Toast is shown by mutation error handler
+    } finally {
+      setIsDirectCommitting(false)
+    }
+  }, [displayFiles, selectedForCommit, getDisplayPath, worktreePath, chatId, selectedOllamaModel, generateCommitMutation, atomicCommitMutation])
+
+  // Handle auto commit push (old behavior - sends instructions to AI chat)
+  const handleAutoCommitPush = useCallback(() => {
     const selectedPaths = displayFiles
       .filter((f) => selectedForCommit.has(getDisplayPath(f)))
       .map((f) => getDisplayPath(f))
     onCommit?.(selectedPaths)
-  }, [displayFiles, selectedForCommit, onCommit, getDisplayPath])
+  }, [displayFiles, selectedForCommit, getDisplayPath, onCommit])
 
   return (
     <div className="mx-2 mb-2">
@@ -285,25 +344,38 @@ export const ChangesWidget = memo(function ChangesWidget({
             </div>
 
             {/* Action buttons */}
-            <div className="flex gap-2 p-2 border-t border-border/50">
-              {/* Commit button */}
-              {onCommit && (
+            <div className="flex flex-col gap-2 p-2 border-t border-border/50">
+              {/* Primary action row - Commit and Auto Commit Push */}
+              <div className="flex gap-2">
+                {/* Commit button - direct commit via tRPC */}
                 <Button
                   variant="default"
                   size="sm"
                   className="flex-1 h-7 text-xs"
                   onClick={handleCommit}
-                  disabled={isCommitting || selectedCount === 0}
+                  disabled={isDirectCommitting || selectedCount === 0}
                 >
-                  {isCommitting ? "Committing..." : `Commit ${selectedCount} file${selectedCount !== 1 ? "s" : ""}`}
+                  {isDirectCommitting ? "Committing..." : `Commit ${selectedCount} file${selectedCount !== 1 ? "s" : ""}`}
                 </Button>
-              )}
+
+                {/* Auto commit push button - sends instructions to AI chat */}
+                {onCommit && (
+                  <Button
+                    size="sm"
+                    className="flex-1 h-7 text-xs bg-orange-500 hover:bg-orange-600 text-white"
+                    onClick={handleAutoCommitPush}
+                    disabled={isCommitting || selectedCount === 0}
+                  >
+                    {isCommitting ? "Sending..." : `Auto commit push ${selectedCount} file${selectedCount !== 1 ? "s" : ""}`}
+                  </Button>
+                )}
+              </div>
 
               {/* View diff button */}
               <Button
                 variant="outline"
                 size="sm"
-                className={cn("h-7 text-xs", onCommit ? "flex-1" : "w-full")}
+                className="w-full h-7 text-xs"
                 onClick={() => onExpand?.()}
               >
                 View Diff
