@@ -73,10 +73,37 @@
     </div>
     <script>
       console.log("[HTML] Inline script running - scripts work!");
-      window.onerror = function(msg, url, line) {
+
+      // Enhanced error handler that also logs to main process
+      window.onerror = function(msg, url, line, col, error) {
+        const errorMsg = `[Renderer Error] ${msg} at ${url}:${line}:${col}`;
         console.error("[HTML] Global error:", msg, "at", url, "line", line);
-        document.getElementById("root").innerHTML = "<pre style='color:red;padding:20px'>Error: " + msg + "</pre>";
+
+        // Display error on screen
+        const root = document.getElementById("root");
+        if (root) {
+          root.innerHTML = "<pre style='color:red;padding:20px;white-space:pre-wrap;font-family:monospace'>" +
+            "Renderer Error:\n" +
+            errorMsg + "\n\n" +
+            (error?.stack || "No stack trace") +
+            "</pre>";
+        }
       };
+
+      // Catch unhandled promise rejections
+      window.addEventListener('unhandledrejection', function(event) {
+        const errorMsg = `[Renderer Promise Rejection] ${event.reason}`;
+        console.error("[HTML] Unhandled promise rejection:", event.reason);
+
+        const root = document.getElementById("root");
+        if (root) {
+          root.innerHTML = "<pre style='color:red;padding:20px;white-space:pre-wrap;font-family:monospace'>" +
+            "Unhandled Promise Rejection:\n" +
+            errorMsg + "\n\n" +
+            (event.reason?.stack || String(event.reason)) +
+            "</pre>";
+        }
+      });
     </script>
     <script type="module" src="./main.tsx"></script>
   </body>

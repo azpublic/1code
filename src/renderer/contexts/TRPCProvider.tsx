@@ -1,4 +1,4 @@
-import { useState } from "react"
+import { useState, useEffect } from "react"
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query"
 import { ipcLink } from "trpc-electron/renderer"
 import { trpc } from "../lib/trpc"
@@ -36,11 +36,30 @@ export function TRPCProvider({ children }: TRPCProviderProps) {
   })
 
   const [trpcClient] = useState(() => {
-    const client = trpc.createClient({
-      links: [ipcLink({ transformer: superjson })],
-    })
-    return client
+    console.log("[TRPCProvider] Creating tRPC client...")
+    try {
+      const client = trpc.createClient({
+        links: [
+          ipcLink({
+            transformer: superjson,
+          }),
+        ],
+      })
+      console.log("[TRPCProvider] tRPC client created successfully")
+      return client
+    } catch (error) {
+      console.error("[TRPCProvider] Failed to create tRPC client:", error)
+      throw error
+    }
   })
+
+  // Log when provider mounts
+  useEffect(() => {
+    console.log("[TRPCProvider] Mounted")
+    return () => {
+      console.log("[TRPCProvider] Unmounted")
+    }
+  }, [])
 
   return (
     <trpc.Provider client={trpcClient} queryClient={queryClient}>

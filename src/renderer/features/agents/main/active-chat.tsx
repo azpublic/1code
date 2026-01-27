@@ -1852,6 +1852,8 @@ const ChatViewInner = memo(function ChatViewInner({
   isSubChatsSidebarOpen = false,
   sandboxId,
   projectPath,
+  projectName,
+  branch,
   isArchived = false,
   onRestoreWorkspace,
   existingPrUrl,
@@ -1874,6 +1876,8 @@ const ChatViewInner = memo(function ChatViewInner({
   isSubChatsSidebarOpen?: boolean
   sandboxId?: string
   projectPath?: string
+  projectName?: string
+  branch?: string
   isArchived?: boolean
   onRestoreWorkspace?: () => void
   existingPrUrl?: string | null
@@ -3959,8 +3963,8 @@ const ChatViewInner = memo(function ChatViewInner({
             isMobile={false}
             chatId={subChatId}
             hasMessages={messages.length > 0}
-            projectName={(agentChat as any)?.project?.name}
-            branch={agentChat?.branch ?? undefined}
+            projectName={projectName}
+            branch={branch}
           />
         </div>
       )}
@@ -6480,6 +6484,8 @@ Make sure to preserve all functionality from both branches when resolving confli
                       isSubChatsSidebarOpen={subChatsSidebarMode === "sidebar"}
                       sandboxId={sandboxId || undefined}
                       projectPath={worktreePath || undefined}
+                      projectName={(agentChat as any)?.project?.name}
+                      branch={agentChat?.branch}
                       isArchived={isArchived}
                       onRestoreWorkspace={handleRestoreWorkspace}
                       existingPrUrl={agentChat?.prUrl}

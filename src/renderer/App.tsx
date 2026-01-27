@@ -1,6 +1,6 @@
 import { Provider as JotaiProvider, useAtomValue, useSetAtom } from "jotai"
 import { ThemeProvider, useTheme } from "next-themes"
-import { useEffect, useMemo } from "react"
+import { useEffect, useMemo, ComponentType } from "react"
 import { Toaster } from "sonner"
 import { TooltipProvider } from "./components/ui/tooltip"
 import { TRPCProvider } from "./contexts/TRPCProvider"
@@ -28,6 +28,41 @@ import { VSCodeThemeProvider } from "./lib/themes/theme-provider"
 import { trpc } from "./lib/trpc"
 import { initializeSettingsCache } from "./lib/settings-storage"
 
+// Error Boundary to catch React rendering errors
+class ErrorBoundary extends React.Component<
+  { children: React.ReactNode },
+  { hasError: boolean; error?: Error }
+> {
+  constructor(props: { children: React.ReactNode }) {
+    super(props)
+    this.state = { hasError: false }
+  }
+
+  static getDerivedStateFromError(error: Error) {
+    console.error("[ErrorBoundary] Caught error:", error)
+    return { hasError: true, error }
+  }
+
+  componentDidCatch(error: Error, errorInfo: React.ErrorInfo) {
+    console.error("[ErrorBoundary] Error details:", error, errorInfo)
+  }
+
+  render() {
+    if (this.state.hasError) {
+      return (
+        <div style={{ padding: "20px", color: "red", fontFamily: "monospace" }}>
+          <h2>Something went wrong</h2>
+          <pre>{this.state.error?.stack || String(this.state.error)}</pre>
+        </div>
+      )
+    }
+    return this.props.children
+  }
+}
+
+// Need to import React for the ErrorBoundary
+import React from "react"
+
 /**
  * Custom Toaster that adapts to theme
  */
@@ -47,6 +82,8 @@ function ThemedToaster() {
  * Main content router - decides which page to show based on onboarding state
  */
 function AppContent() {
+  console.log("[AppContent] Rendering AppContent...")
+
   const billingMethod = useAtomValue(billingMethodAtom)
   const setBillingMethod = useSetAtom(billingMethodAtom)
   const anthropicOnboardingCompleted = useAtomValue(
@@ -209,14 +246,20 @@ function AppContent() {
 }
 
 export function App() {
+  console.log("[App] App component rendering...")
+
   // Initialize analytics and settings on mount
   useEffect(() => {
+    console.log("[App] App component mounted, initializing...")
+
     // Initialize settings cache from main process (non-blocking)
     initializeSettingsCache().catch((error) => {
       console.warn("[App] Failed to initialize settings cache:", error)
     })
 
+    console.log("[App] Initializing analytics...")
     initAnalytics()
+    console.log("[App] Analytics initialized")
 
     // Sync analytics opt-out status to main process
     const syncOptOutStatus = async () => {
@@ -243,6 +286,8 @@ export function App() {
     }
     identifyUser()
 
+    console.log("[App] App initialization complete")
+
     // Cleanup on unmount
     return () => {
       shutdown()
@@ -250,24 +295,26 @@ export function App() {
   }, [])
 
   return (
-    <WindowProvider>
-      <JotaiProvider store={appStore}>
-        <ThemeProvider attribute="class" defaultTheme="system" enableSystem>
-          <VSCodeThemeProvider>
-            <TooltipProvider delayDuration={100}>
-              <TRPCProvider>
-                <div
-                  data-agents-page
-                  className="h-screen w-screen bg-background text-foreground overflow-hidden"
-                >
-                  <AppContent />
-                </div>
-                <ThemedToaster />
-              </TRPCProvider>
-            </TooltipProvider>
-          </VSCodeThemeProvider>
-        </ThemeProvider>
-      </JotaiProvider>
-    </WindowProvider>
+    <ErrorBoundary>
+      <WindowProvider>
+        <JotaiProvider store={appStore}>
+          <ThemeProvider attribute="class" defaultTheme="system" enableSystem>
+            <VSCodeThemeProvider>
+              <TooltipProvider delayDuration={100}>
+                <TRPCProvider>
+                  <div
+                    data-agents-page
+                    className="h-screen w-screen bg-background text-foreground overflow-hidden"
+                  >
+                    <AppContent />
+                  </div>
+                  <ThemedToaster />
+                </TRPCProvider>
+              </TooltipProvider>
+            </VSCodeThemeProvider>
+          </ThemeProvider>
+        </JotaiProvider>
+      </WindowProvider>
+    </ErrorBoundary>
   )
 }

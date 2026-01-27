@@ -48,27 +48,51 @@ export function initDatabase() {
   const dbPath = getDatabasePath()
   console.log(`[DB] Initializing database at: ${dbPath}`)
 
-  // Create SQLite connection
-  sqlite = new Database(dbPath)
-  sqlite.pragma("journal_mode = WAL")
-  sqlite.pragma("foreign_keys = ON")
-
-  // Create Drizzle instance
-  db = drizzle(sqlite, { schema })
-
-  // Run migrations
-  const migrationsPath = getMigrationsPath()
-  console.log(`[DB] Running migrations from: ${migrationsPath}`)
-
   try {
+    // Create SQLite connection
+    console.log("[DB] Creating SQLite connection...")
+    sqlite = new Database(dbPath)
+    sqlite.pragma("journal_mode = WAL")
+    sqlite.pragma("foreign_keys = ON")
+    console.log("[DB] SQLite connection created, PRAGMAs set")
+
+    // Create Drizzle instance
+    console.log("[DB] Creating Drizzle instance...")
+    db = drizzle(sqlite, { schema })
+    console.log("[DB] Drizzle instance created")
+
+    // Run migrations
+    const migrationsPath = getMigrationsPath()
+    console.log(`[DB] Running migrations from: ${migrationsPath}`)
+
+    console.log("[DB] Starting migration...")
     migrate(db, { migrationsFolder: migrationsPath })
-    console.log("[DB] Migrations completed")
+    console.log("[DB] Migrations completed successfully")
+
+    // Test the database by running a simple query
+    console.log("[DB] Testing database connection...")
+    const testResult = sqlite.prepare("SELECT 1 as test").get()
+    console.log("[DB] Database test query result:", testResult)
+
+    return db
   } catch (error) {
-    console.error("[DB] Migration error:", error)
+    console.error("[DB] Database initialization error:", error)
+    if (error instanceof Error) {
+      console.error("[DB] Error message:", error.message)
+      console.error("[DB] Error stack:", error.stack)
+    }
+    // Clean up if initialization failed
+    if (sqlite) {
+      try {
+        sqlite.close()
+      } catch (closeError) {
+        console.error("[DB] Error closing database during cleanup:", closeError)
+      }
+      sqlite = null
+      db = null
+    }
     throw error
   }
-
-  return db
 }
 
 /**
