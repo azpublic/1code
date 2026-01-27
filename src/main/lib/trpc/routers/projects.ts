@@ -590,4 +590,52 @@ export const projectsRouter = router({
         .returning()
         .get()
     }),
+
+  /**
+   * Update agent permission mode for Local mode (project-level override)
+   * Set to null to use global default
+   */
+  updateAgentPermissionLocalMode: publicProcedure
+    .input(
+      z.object({
+        projectId: z.string(),
+        mode: z.enum(["auto", "prompt", "restrict"]).nullable().optional(),
+      })
+    )
+    .mutation(({ input }) => {
+      const db = getDatabase()
+      return db
+        .update(projects)
+        .set({
+          agentPermissionLocalMode: input.mode ?? null,
+          updatedAt: new Date(),
+        })
+        .where(eq(projects.id, input.projectId))
+        .returning()
+        .get()
+    }),
+
+  /**
+   * Update agent permission mode for Worktree mode (project-level override)
+   * Set to null to use global default
+   */
+  updateAgentPermissionWorktreeMode: publicProcedure
+    .input(
+      z.object({
+        projectId: z.string(),
+        mode: z.enum(["auto", "prompt", "restrict"]).nullable().optional(),
+      })
+    )
+    .mutation(({ input }) => {
+      const db = getDatabase()
+      return db
+        .update(projects)
+        .set({
+          agentPermissionWorktreeMode: input.mode ?? null,
+          updatedAt: new Date(),
+        })
+        .where(eq(projects.id, input.projectId))
+        .returning()
+        .get()
+    }),
 })

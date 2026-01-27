@@ -1,6 +1,8 @@
 import { useAtom } from "jotai"
 import { useEffect, useState } from "react"
 import {
+  agentPermissionLocalModeAtom,
+  agentPermissionWorktreeModeAtom,
   analyticsOptOutAtom,
   autoAdvanceTargetAtom,
   autoUpdateCheckEnabledAtom,
@@ -58,6 +60,8 @@ export function AgentsPreferencesTab() {
   const [defaultAgentMode, setDefaultAgentMode] = useAtom(defaultAgentModeAtom)
   const [defaultWorktreeBaseLocation, setDefaultWorktreeBaseLocation] = useAtom(defaultWorktreeBaseLocationAtom)
   const [interviewTimeoutSeconds, setInterviewTimeoutSeconds] = useAtom(interviewTimeoutSecondsAtom)
+  const [agentPermissionLocal, setAgentPermissionLocal] = useAtom(agentPermissionLocalModeAtom)
+  const [agentPermissionWorktree, setAgentPermissionWorktree] = useAtom(agentPermissionWorktreeModeAtom)
   const isNarrowScreen = useIsNarrowScreen()
 
   // Co-authored-by setting from Claude settings.json
@@ -129,6 +133,28 @@ export function AgentsPreferencesTab() {
     }
     syncToMainProcess()
   }, [interviewTimeoutSeconds])
+
+  // Sync agent permission settings to main process whenever they change
+  useEffect(() => {
+    const syncToMainProcess = async () => {
+      try {
+        await Promise.all([
+          setSettingMutation.mutateAsync({
+            key: "agentPermissionLocalMode",
+            value: agentPermissionLocal,
+          }),
+          setSettingMutation.mutateAsync({
+            key: "agentPermissionWorktreeMode",
+            value: agentPermissionWorktree,
+          }),
+        ])
+        console.log("[Preferences] Synced agent permission settings to main process:", { agentPermissionLocal, agentPermissionWorktree })
+      } catch (error) {
+        console.error("[Preferences] Failed to sync agent permission settings:", error)
+      }
+    }
+    syncToMainProcess()
+  }, [agentPermissionLocal, agentPermissionWorktree])
 
   return (
     <div className="p-6 space-y-6">
@@ -416,6 +442,73 @@ export function AgentsPreferencesTab() {
                   {defaultWorktreeBaseLocation || "~/.21st/worktrees"}/&lt;project-name&gt;/&lt;worktree-name&gt;
                 </code>
               </p>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      {/* Agent Permissions Section */}
+      <div className="space-y-2">
+        <div className="pb-2">
+          <h4 className="text-sm font-medium text-foreground">Agent Permissions</h4>
+          <p className="text-xs text-muted-foreground mt-1">
+            Control when Claude can run tools without asking
+          </p>
+        </div>
+        <div className="bg-background rounded-lg border border-border overflow-hidden">
+          <div className="p-4 space-y-4">
+            {/* Local Mode Permission */}
+            <div className="flex items-start justify-between">
+              <div className="flex flex-col space-y-1">
+                <span className="text-sm font-medium text-foreground">
+                  Local Mode Permissions
+                </span>
+                <span className="text-xs text-muted-foreground">
+                  When working directly in your project folder
+                </span>
+              </div>
+              <Select
+                value={agentPermissionLocal}
+                onValueChange={(value: "auto" | "prompt" | "restrict") => setAgentPermissionLocal(value)}
+              >
+                <SelectTrigger className="w-32">
+                  <span className="text-xs">
+                    {agentPermissionLocal === "prompt" ? "Prompt for approval" : agentPermissionLocal === "auto" ? "Auto-approve" : "Restricted"}
+                  </span>
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="prompt">Prompt for approval</SelectItem>
+                  <SelectItem value="auto">Auto-approve</SelectItem>
+                  <SelectItem value="restrict">Restricted</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+
+            {/* Worktree Mode Permission */}
+            <div className="flex items-start justify-between">
+              <div className="flex flex-col space-y-1">
+                <span className="text-sm font-medium text-foreground">
+                  Worktree Mode Permissions
+                </span>
+                <span className="text-xs text-muted-foreground">
+                  When working in an isolated worktree
+                </span>
+              </div>
+              <Select
+                value={agentPermissionWorktree}
+                onValueChange={(value: "auto" | "prompt" | "restrict") => setAgentPermissionWorktree(value)}
+              >
+                <SelectTrigger className="w-32">
+                  <span className="text-xs">
+                    {agentPermissionWorktree === "auto" ? "Auto-approve" : agentPermissionWorktree === "prompt" ? "Prompt for approval" : "Restricted"}
+                  </span>
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="auto">Auto-approve</SelectItem>
+                  <SelectItem value="prompt">Prompt for approval</SelectItem>
+                  <SelectItem value="restrict">Restricted</SelectItem>
+                </SelectContent>
+              </Select>
             </div>
           </div>
         </div>

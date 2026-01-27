@@ -123,6 +123,21 @@ export function AgentsProjectWorktreeTab({
     },
   })
 
+  // Update agent permission mode mutations
+  const updateAgentPermissionLocalMutation = trpc.projects.updateAgentPermissionLocalMode.useMutation({
+    onSuccess: () => {
+      refetchProject()
+      toast.success("Local mode permissions updated")
+    },
+  })
+
+  const updateAgentPermissionWorktreeMutation = trpc.projects.updateAgentPermissionWorktreeMode.useMutation({
+    onSuccess: () => {
+      refetchProject()
+      toast.success("Worktree mode permissions updated")
+    },
+  })
+
   // Delete project mutation
   const deleteMutation = trpc.projects.delete.useMutation({
     onSuccess: () => {
@@ -400,6 +415,111 @@ export function AgentsProjectWorktreeTab({
               >
                 {updateExclusionsMutation.isPending ? "Saving..." : "Save Exclusions"}
               </Button>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      {/* Agent Permissions (Per-Project Override) */}
+      <div className="space-y-2">
+        <div className="pb-2">
+          <h4 className="text-sm font-medium text-foreground">
+            Agent Permissions
+          </h4>
+          <p className="text-xs text-muted-foreground mt-1">
+            Override global permission defaults for this project. Leave empty to use global defaults.
+          </p>
+        </div>
+        <div className="bg-background rounded-lg border border-border overflow-hidden">
+          <div className="p-4 space-y-4">
+            {/* Local Mode Permission */}
+            <div className="flex items-start justify-between">
+              <div className="flex flex-col space-y-1">
+                <span className="text-sm font-medium text-foreground">
+                  Local Mode Permissions
+                </span>
+                <span className="text-xs text-muted-foreground">
+                  When working directly in your project folder
+                </span>
+              </div>
+              <div className="flex items-center gap-2">
+                <Select
+                  value={project?.agentPermissionLocalMode ?? "global"}
+                  onValueChange={(value: "auto" | "prompt" | "restrict" | "global") => {
+                    if (value === "global") {
+                      updateAgentPermissionLocalMutation.mutate({
+                        projectId,
+                        mode: null,
+                      })
+                    } else {
+                      updateAgentPermissionLocalMutation.mutate({
+                        projectId,
+                        mode: value,
+                      })
+                    }
+                  }}
+                >
+                  <SelectTrigger className="w-40">
+                    <span className="text-xs">
+                      {project?.agentPermissionLocalMode === "prompt" ? "Prompt for approval"
+                        : project?.agentPermissionLocalMode === "auto" ? "Auto-approve"
+                        : project?.agentPermissionLocalMode === "restrict" ? "Restricted"
+                        : "Use global default"}
+                    </span>
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="global">Use global default</SelectItem>
+                    <SelectItem value="prompt">Prompt for approval</SelectItem>
+                    <SelectItem value="auto">Auto-approve</SelectItem>
+                    <SelectItem value="restrict">Restricted</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+            </div>
+
+            {/* Worktree Mode Permission */}
+            <div className="flex items-start justify-between">
+              <div className="flex flex-col space-y-1">
+                <span className="text-sm font-medium text-foreground">
+                  Worktree Mode Permissions
+                </span>
+                <span className="text-xs text-muted-foreground">
+                  When working in an isolated worktree
+                </span>
+              </div>
+              <div className="flex items-center gap-2">
+                <Select
+                  value={project?.agentPermissionWorktreeMode ?? "global"}
+                  onValueChange={(value: "auto" | "prompt" | "restrict" | "global") => {
+                    if (value === "global") {
+                      updateAgentPermissionWorktreeMutation.mutate({
+                        projectId,
+                        mode: null,
+                      })
+                    } else {
+                      updateAgentPermissionWorktreeMutation.mutate({
+                        projectId,
+                        mode: value,
+                      })
+                    }
+                  }}
+                >
+                  <SelectTrigger className="w-40">
+                    <span className="text-xs">
+                      {project?.agentPermissionWorktreeMode === "auto" ? "Auto-approve"
+                        : project?.agentPermissionWorktreeMode === "prompt" ? "Prompt for approval"
+                        : project?.agentPermissionWorktreeMode === "restrict" ? "Restricted"
+                        : "Use global default"}
+                    </span>
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="global">Use global default</SelectItem>
+                    <SelectItem value="auto">Auto-approve</SelectItem>
+                    <SelectItem value="prompt">Prompt for approval</SelectItem>
+                    <SelectItem value="restrict">Restricted</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
             </div>
           </div>
         </div>

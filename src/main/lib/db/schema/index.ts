@@ -23,6 +23,9 @@ export const projects = sqliteTable("projects", {
   // Worktree configuration
   worktreeBaseLocation: text("worktree_base_location"), // Custom base path for worktrees (overrides global default)
   sparseCheckoutExclusions: text("sparse_checkout_exclusions"), // JSON array of patterns to exclude (e.g., ["assets/", "*.png"])
+  // Agent permission overrides (null = use global default)
+  agentPermissionLocalMode: text("agent_permission_local_mode"), // "auto" | "prompt" | "restrict" | null
+  agentPermissionWorktreeMode: text("agent_permission_worktree_mode"), // "auto" | "prompt" | "restrict" | null
 })
 
 export const projectsRelations = relations(projects, ({ many }) => ({
