@@ -7,3 +7,9 @@ mac:
   identity: ${env.APPLE_IDENTITY}
   notarize:
     teamId: ${env.APPLE_TEAM_ID}
+
+win:
+  # Disable automatic code signing on Windows
+  # Remove this if you have a code signing certificate
+  signingHashAlgorithms: []
+  signtoolOptions: null

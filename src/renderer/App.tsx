@@ -47,12 +47,58 @@ class ErrorBoundary extends React.Component<
     console.error("[ErrorBoundary] Error details:", error, errorInfo)
   }
 
+  handleReset = () => {
+    this.setState({ hasError: false, error: undefined })
+    // Try to reload the page to recover from the error
+    window.location.reload()
+  }
+
   render() {
     if (this.state.hasError) {
       return (
-        <div style={{ padding: "20px", color: "red", fontFamily: "monospace" }}>
-          <h2>Something went wrong</h2>
-          <pre>{this.state.error?.stack || String(this.state.error)}</pre>
+        <div className="h-screen w-screen flex items-center justify-center bg-background p-6">
+          <div className="max-w-2xl w-full bg-card border border-border rounded-lg shadow-lg p-6">
+            <h1 className="text-2xl font-semibold text-destructive mb-4">Something went wrong</h1>
+            <p className="text-muted-foreground mb-4">
+              An unexpected error occurred. You can try reloading the app or copy the error details below for debugging.
+            </p>
+            <div className="flex gap-3 mb-4">
+              <button
+                onClick={this.handleReset}
+                className="px-4 py-2 bg-primary text-primary-foreground rounded-md hover:bg-primary/90 transition-colors"
+              >
+                Reload App
+              </button>
+              <button
+                onClick={() => {
+                  const errorDetails = `${this.state.error?.name}: ${this.state.error?.message}\n\n${this.state.error?.stack || ""}`
+                  navigator.clipboard.writeText(errorDetails)
+                }}
+                className="px-4 py-2 bg-secondary text-secondary-foreground rounded-md hover:bg-secondary/80 transition-colors"
+              >
+                Copy Error
+              </button>
+              <button
+                onClick={async () => {
+                  // First unlock DevTools (required in production)
+                  await window.desktopApi?.unlockDevTools()
+                  // Then open DevTools
+                  window.desktopApi?.toggleDevTools()
+                }}
+                className="px-4 py-2 bg-outline text-outline-foreground rounded-md hover:bg-outline/80 transition-colors"
+              >
+                Open DevTools
+              </button>
+            </div>
+            <details className="mt-4">
+              <summary className="cursor-pointer text-sm font-medium text-muted-foreground hover:text-foreground">
+                Error Details
+              </summary>
+              <pre className="mt-2 p-4 bg-muted rounded-md overflow-auto text-xs text-destructive max-h-64">
+                {this.state.error?.stack || String(this.state.error)}
+              </pre>
+            </details>
+          </div>
         </div>
       )
     }

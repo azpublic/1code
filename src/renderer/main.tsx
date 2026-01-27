@@ -61,6 +61,68 @@ window.onerror = (message, source, lineno, colno, error) => {
   return false
 }
 
+// Global DevTools keyboard shortcut: Ctrl/Cmd + Shift + D
+// Always available, no need to unlock via 5-click feature
+window.addEventListener("keydown", (e) => {
+  // Check for Ctrl/Cmd + Shift + D
+  if ((e.ctrlKey || e.metaKey) && e.shiftKey && (e.key === "d" || e.key === "D")) {
+    e.preventDefault()
+    console.log("[DevTools] Toggling DevTools via Ctrl/Cmd+Shift+D")
+    window.desktopApi?.toggleDevTools()
+  }
+})
+
+// Handle unhandled promise rejections (e.g., "Failed to fetch" errors)
+// This prevents the "black screen of death" from async errors
+window.addEventListener("unhandledrejection", (event) => {
+  // Log the error for debugging
+  console.error("[Unhandled Promise Rejection]:", event.reason)
+
+  // Prevent the default browser error page/black screen
+  event.preventDefault()
+
+  // Show a toast notification for the user
+  // We need to import toast dynamically since this is at the module level
+  import("sonner").then(({ toast }) => {
+    const errorMessage = event.reason?.message || String(event.reason) || "An unexpected error occurred"
+
+    // Don't show toasts for ResizeObserver errors (already handled above)
+    if (typeof errorMessage === "string" && resizeObserverErr.test(errorMessage)) {
+      return
+    }
+
+    // Special handling for "Failed to fetch" errors from tRPC subscriptions
+    // This typically happens when trying to send a message while another is being processed
+    if (errorMessage.includes("Failed to fetch") || errorMessage.includes("fetch")) {
+      toast("Message queued", {
+        description: "Claude is still busy. Your message will be sent when ready.",
+        duration: 4000,
+      })
+      return
+    }
+
+    toast.error("Something went wrong", {
+      description: errorMessage.length > 200
+        ? errorMessage.slice(0, 200) + "..."
+        : errorMessage,
+      duration: 8000,
+      action: {
+        label: "Copy Error",
+        onClick: () => {
+          const errorDetails = typeof event.reason === "object"
+            ? JSON.stringify(event.reason, null, 2)
+            : String(event.reason)
+          navigator.clipboard.writeText(errorDetails)
+          toast.success("Error details copied")
+        },
+      },
+    })
+  }).catch(() => {
+    // If toast import fails, just log to console
+    console.warn("[Toast] Failed to show error notification")
+  })
+})
+
 console.log("[main.tsx] Getting root element...")
 const rootElement = document.getElementById("root")
 

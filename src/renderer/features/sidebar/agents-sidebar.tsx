@@ -38,7 +38,7 @@ import {
   useRenameRemoteChat,
 } from "../../lib/hooks/use-remote-chats"
 import { ArchivePopover } from "../agents/ui/archive-popover"
-import { ChevronDown, MoreHorizontal, Columns3, CheckSquare } from "lucide-react"
+import { ChevronDown, MoreHorizontal, Columns3, CheckSquare, Terminal } from "lucide-react"
 // import { useRouter } from "next/navigation" // Desktop doesn't use next/navigation
 // import { useCombinedAuth } from "@/lib/hooks/use-combined-auth"
 const useCombinedAuth = () => ({ userId: null })
@@ -1359,6 +1359,19 @@ const SidebarHeader = memo(function SidebarHeader({
                     >
                       <SettingsIcon className="h-3.5 w-3.5 text-muted-foreground flex-shrink-0" />
                       Settings
+                    </DropdownMenuItem>
+
+                    {/* DevTools - with keyboard shortcut hint */}
+                    <DropdownMenuItem
+                      className="gap-2"
+                      onSelect={() => {
+                        setIsDropdownOpen(false)
+                        window.desktopApi?.toggleDevTools()
+                      }}
+                    >
+                      <Terminal className="h-3.5 w-3.5 text-muted-foreground flex-shrink-0" />
+                      <span className="flex-1">DevTools</span>
+                      <Kbd className="ml-auto text-xs">⇧⌘D</Kbd>
                     </DropdownMenuItem>
 
                     {/* Help Submenu */}

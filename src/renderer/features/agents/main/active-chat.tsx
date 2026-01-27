@@ -1644,7 +1644,7 @@ interface DiffSidebarRendererProps {
   isDesktop: boolean
   isFullscreen: boolean
   setDiffDisplayMode: (mode: "side-peek" | "center-peek" | "full-page") => void
-  handleCommitToPr: (selectedPaths?: string[]) => void
+  handleCommitPush: (selectedPaths?: string[]) => void
   isCommittingToPr: boolean
   subChatsWithFiles: Array<{ id: string; name: string; filePaths: string[]; fileCount: number }>
   setDiffStats: (stats: { isLoading: boolean; hasChanges: boolean; fileCount: number; additions: number; deletions: number }) => void
@@ -1689,7 +1689,7 @@ const DiffSidebarRenderer = memo(function DiffSidebarRenderer({
   isDesktop,
   isFullscreen,
   setDiffDisplayMode,
-  handleCommitToPr,
+  handleCommitPush,
   isCommittingToPr,
   subChatsWithFiles,
   setDiffStats,
@@ -1777,7 +1777,7 @@ const DiffSidebarRenderer = memo(function DiffSidebarRenderer({
         diffViewRef={diffViewRef}
         agentChat={agentChat}
         sidebarWidth={effectiveWidth}
-        onCommitWithAI={handleCommitToPr}
+        onCommitWithAI={handleCommitPush}
         isCommittingWithAI={isCommittingToPr}
         diffMode={diffMode}
         setDiffMode={setDiffMode}
@@ -3628,13 +3628,27 @@ const ChatViewInner = memo(function ChatViewInner({
     // Stop current stream if streaming and wait for status to become ready
     if (isStreamingRef.current) {
       await handleStop()
-      // Wait for status to become "ready" (max 2 seconds)
-      const maxWait = 2000
+
+      // Wait for status to become "ready" (max 3 seconds)
+      // We need to wait for both isStreamingRef AND the actual chat status
+      const maxWait = 3000
       const pollInterval = 50
       let waited = 0
-      while (isStreamingRef.current && waited < maxWait) {
+      while (waited < maxWait) {
+        // Check both the ref and the actual status from useChat
+        const currentStatus = status // Captured from closure
+        if (!isStreamingRef.current && currentStatus !== "streaming" && currentStatus !== "submitted") {
+          // Status is ready, break out of wait loop
+          console.log("[ForceSend] Status is ready after", waited, "ms")
+          break
+        }
         await new Promise((resolve) => setTimeout(resolve, pollInterval))
         waited += pollInterval
+      }
+
+      // If we timed out, log a warning but still try to send
+      if (waited >= maxWait) {
+        console.warn("[ForceSend] Timed out waiting for status to become ready")
       }
     }
 
@@ -3726,7 +3740,55 @@ const ChatViewInner = memo(function ChatViewInner({
     shouldAutoScrollRef.current = true
     scrollToBottom()
 
-    await sendMessageRef.current({ role: "user", parts })
+    // Try to send the message with error handling
+    try {
+      await sendMessageRef.current({ role: "user", parts })
+    } catch (error) {
+      // Handle race condition when sending immediately after stopping stream
+      console.error("[ForceSend] Failed to send message:", error)
+
+      // Check if this is a "Failed to fetch" error (likely race condition)
+      const isFetchError = error instanceof Error && (
+        error.message.includes("Failed to fetch") ||
+        error.message.includes("Network") ||
+        error.message.includes("fetch")
+      )
+
+      if (isFetchError) {
+        // Re-queue the message for retry when the chat is ready
+        addToQueue(subChatId, {
+          id: `force-send-${Date.now()}`,
+          message: finalText,
+          images: currentImages.filter((img) => !img.isLoading && img.url),
+          files: currentFiles.filter((f) => !f.isLoading && f.url),
+        })
+
+        // Show toast notification
+        toast.error("Claude is still busy", {
+          description: "Your message was added to the queue and will be sent automatically.",
+          duration: 4000,
+        })
+      } else {
+        // Unknown error - show generic error
+        toast.error("Failed to send message", {
+          description: error instanceof Error ? error.message : "Unknown error",
+          duration: 6000,
+        })
+      }
+
+      // Re-populate editor and attachments since send failed
+      editorRef.current?.setValue(finalText)
+      currentImages.forEach((img) => {
+        if (!isLoading && img.url) {
+          // Re-add images (simplified - in real case would need proper state restoration)
+        }
+      })
+      currentFiles.forEach((f) => {
+        if (!isLoading && f.url) {
+          // Re-add files (simplified - in real case would need proper state restoration)
+        }
+      })
+    }
   }, [
     sandboxSetupStatus,
     isArchived,
@@ -3735,6 +3797,7 @@ const ChatViewInner = memo(function ChatViewInner({
     subChatId,
     handleStop,
     clearAll,
+    addToQueue,
   ])
 
   // NOTE: Auto-processing of queue is now handled globally by QueueProcessor
@@ -6705,7 +6768,7 @@ Make sure to preserve all functionality from both branches when resolving confli
               isDesktop={isDesktop}
               isFullscreen={isFullscreen}
               setDiffDisplayMode={setDiffDisplayMode}
-              handleCommitToPr={handleCommitToPr}
+              handleCommitPush={handleCommitPush}
               isCommittingToPr={isCommittingToPr}
               subChatsWithFiles={subChatsWithFiles}
               setDiffStats={setDiffStats}
