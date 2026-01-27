@@ -44,6 +44,10 @@ export function sanitizeProjectName(name: string): string {
  * Checks the parent directory for existing folders to avoid collisions.
  * Falls back to appending a numeric suffix if random generation keeps colliding.
  *
+ * @deprecated Use generateBranchName() directly as the folder name instead.
+ * The branch name (adjective-animal-hex) is now used as the folder name
+ * to avoid confusion between two different random names.
+ *
  * Note: There is a theoretical TOCTOU race between existsSync and the actual
  * git worktree add. In practice this is negligible (180k combinations, single
  * local user). If it occurs, git worktree add fails atomically and the error
