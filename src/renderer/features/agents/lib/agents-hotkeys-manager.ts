@@ -108,6 +108,7 @@ export interface AgentsHotkeysManagerConfig {
   setSettingsDialogOpen?: (open: boolean) => void
   setSettingsActiveTab?: (tab: SettingsTab) => void
   toggleChatSearch?: () => void
+  setTaskViewVisible?: (visible: boolean) => void
   selectedChatId?: string | null
   customHotkeysConfig?: CustomHotkeysConfig
   // Feature flags
@@ -141,6 +142,7 @@ export function useAgentsHotkeys(
       setSettingsDialogOpen: config.setSettingsDialogOpen,
       setSettingsActiveTab: config.setSettingsActiveTab,
       toggleChatSearch: config.toggleChatSearch,
+      setTaskViewVisible: config.setTaskViewVisible,
       selectedChatId: config.selectedChatId,
     }),
     [
@@ -151,6 +153,7 @@ export function useAgentsHotkeys(
       config.setSettingsDialogOpen,
       config.setSettingsActiveTab,
       config.toggleChatSearch,
+      config.setTaskViewVisible,
       config.selectedChatId,
     ],
   )

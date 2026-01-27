@@ -84,6 +84,14 @@ export {
 } from "../../features/agents/atoms"
 
 // ============================================
+// RE-EXPORT FROM FEATURES/TASKS/ATOMS (source of truth)
+// ============================================
+
+export {
+  taskViewVisibleAtom,
+} from "../../features/tasks/atoms"
+
+// ============================================
 // TEAM ATOMS (unique to lib/atoms)
 // ============================================
 

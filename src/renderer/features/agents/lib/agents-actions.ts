@@ -24,6 +24,7 @@ export interface AgentActionContext {
   setSettingsDialogOpen?: (open: boolean) => void
   setSettingsActiveTab?: (tab: SettingsTab) => void
   toggleChatSearch?: () => void
+  setTaskViewVisible?: (visible: boolean) => void
 
   // Data
   selectedChatId?: string | null
@@ -137,6 +138,22 @@ const openKanbanAction: AgentActionDefinition = {
   },
 }
 
+const openTasksAction: AgentActionDefinition = {
+  id: "open-tasks",
+  label: "Open Tasks",
+  description: "Open the Tasks view",
+  category: "view",
+  hotkey: "cmd+shift+t",
+  handler: async (context) => {
+    // Clear selected chat, draft, and new form state to show Tasks view
+    context.setSelectedChatId?.(null)
+    context.setSelectedDraftId?.(null)
+    context.setShowNewChatForm?.(false)
+    context.setTaskViewVisible?.(true)
+    return { success: true }
+  },
+}
+
 // ============================================================================
 // ACTION REGISTRY
 // ============================================================================
@@ -148,6 +165,7 @@ export const AGENT_ACTIONS: Record<string, AgentActionDefinition> = {
   "toggle-sidebar": toggleSidebarAction,
   "toggle-chat-search": toggleChatSearchAction,
   "open-kanban": openKanbanAction,
+  "open-tasks": openTasksAction,
 }
 
 export function getAgentAction(id: string): AgentActionDefinition | undefined {

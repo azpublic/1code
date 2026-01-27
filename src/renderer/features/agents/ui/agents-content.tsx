@@ -30,9 +30,11 @@ import {
   ctrlTabTargetAtom,
   betaKanbanEnabledAtom,
   chatSourceModeAtom,
+  taskViewVisibleAtom,
 } from "../../../lib/atoms"
 import { NewChatForm } from "../main/new-chat-form"
 import { KanbanView } from "../../kanban"
+import { TaskView } from "../../tasks/task-view"
 import { ChatView } from "../main/active-chat"
 import { api } from "../../../lib/mock-api"
 import { trpc } from "../../../lib/trpc"
@@ -70,6 +72,7 @@ export function AgentsContent() {
   const selectedDraftId = useAtomValue(selectedDraftIdAtom)
   const showNewChatForm = useAtomValue(showNewChatFormAtom)
   const betaKanbanEnabled = useAtomValue(betaKanbanEnabledAtom)
+  const taskViewVisible = useAtomValue(taskViewVisibleAtom)
   const [selectedTeamId] = useAtom(selectedTeamIdAtom)
   const [sidebarOpen, setSidebarOpen] = useAtom(agentsSidebarOpenAtom)
   const [previewSidebarOpen, setPreviewSidebarOpen] = useAtom(
@@ -955,6 +958,8 @@ export function AgentsContent() {
             <div className="h-full flex flex-col relative overflow-hidden">
               <NewChatForm key={`new-chat-${newChatFormKeyRef.current}`} />
             </div>
+          ) : taskViewVisible ? (
+            <TaskView />
           ) : betaKanbanEnabled ? (
             <KanbanView />
           ) : (

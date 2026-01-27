@@ -27,6 +27,7 @@ import {
   type ChatSourceMode,
   showWorkspaceIconAtom,
   betaKanbanEnabledAtom,
+  taskViewVisibleAtom,
 } from "../../lib/atoms"
 import {
   useRemoteChats,
@@ -115,7 +116,6 @@ import {
   pendingUserQuestionsAtom,
   type UndoItem,
 } from "../agents/atoms"
-import { tasksSidebarOpenAtom } from "../tasks/atoms"
 import { NetworkStatus } from "../../components/ui/network-status"
 import { useAgentSubChatStore, OPEN_SUB_CHATS_CHANGE_EVENT } from "../agents/stores/sub-chat-store"
 import { getWindowId } from "../../contexts/WindowContext"
@@ -1101,18 +1101,20 @@ const KanbanButton = memo(function KanbanButton() {
   )
 })
 
-// Isolated Tasks Button - toggles tasks sidebar
+// Isolated Tasks Button - opens task view in center screen
 const TasksButton = memo(function TasksButton() {
-  const [tasksSidebarOpen, setTasksSidebarOpen] = useAtom(tasksSidebarOpenAtom)
-  const [selectedProject] = useAtom(selectedProjectAtom)
+  const [taskViewVisible, setTaskViewVisible] = useAtom(taskViewVisibleAtom)
+  const [selectedChatId, setSelectedChatId] = useAtom(selectedAgentChatIdAtom)
+  const setSelectedDraftId = useSetAtom(selectedDraftIdAtom)
+  const setShowNewChatForm = useSetAtom(showNewChatFormAtom)
 
   const handleClick = useCallback(() => {
-    if (!selectedProject) return
-    setTasksSidebarOpen(!tasksSidebarOpen)
-  }, [tasksSidebarOpen, setTasksSidebarOpen, selectedProject])
-
-  // Disable button if no project is selected
-  if (!selectedProject) return null
+    // Clear chat selection and show task view
+    setSelectedChatId(null)
+    setSelectedDraftId(null)
+    setShowNewChatForm(false)
+    setTaskViewVisible(true)
+  }, [setSelectedChatId, setSelectedDraftId, setShowNewChatForm, setTaskViewVisible])
 
   return (
     <Tooltip delayDuration={500}>
@@ -1122,7 +1124,7 @@ const TasksButton = memo(function TasksButton() {
           onClick={handleClick}
           className={cn(
             "flex items-center justify-center h-7 w-7 rounded-md transition-[background-color,color,transform] duration-150 ease-out active:scale-[0.97] outline-offset-2 focus-visible:outline focus-visible:outline-2 focus-visible:outline-ring/70",
-            tasksSidebarOpen
+            taskViewVisible
               ? "text-foreground bg-muted/50"
               : "text-muted-foreground hover:text-foreground hover:bg-muted/50",
           )}
@@ -1132,7 +1134,7 @@ const TasksButton = memo(function TasksButton() {
       </TooltipTrigger>
       <TooltipContent>
         Tasks
-        {tasksSidebarOpen && <span className="ml-2 text-muted-foreground">(Open)</span>}
+        {taskViewVisible && <span className="ml-2 text-muted-foreground">(Active)</span>}
       </TooltipContent>
     </Tooltip>
   )
