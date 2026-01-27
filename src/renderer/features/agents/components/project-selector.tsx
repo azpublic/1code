@@ -1,7 +1,8 @@
 import { useState, useMemo, useCallback } from "react"
-import { useAtom, useAtomValue } from "jotai"
-import { FolderOpen } from "lucide-react"
+import { useAtom, useAtomValue, useSetAtom } from "jotai"
+import { FolderOpen, CheckSquare } from "lucide-react"
 import { showOfflineModeFeaturesAtom } from "../../../lib/atoms"
+import { tasksSidebarOpenAtom } from "../../tasks/atoms"
 import {
   Popover,
   PopoverContent,
@@ -73,6 +74,7 @@ function ProjectIcon({
 
 export function ProjectSelector() {
   const [selectedProject, setSelectedProject] = useAtom(selectedProjectAtom)
+  const setTasksSidebarOpen = useSetAtom(tasksSidebarOpenAtom)
   const [open, setOpen] = useState(false)
   const [searchQuery, setSearchQuery] = useState("")
   const [githubDialogOpen, setGithubDialogOpen] = useState(false)
@@ -292,6 +294,18 @@ export function ProjectSelector() {
             )}
           </CommandList>
           <div className="border-t border-border/50 py-1">
+            {validSelection && (
+              <button
+                onClick={() => {
+                  setOpen(false)
+                  setTasksSidebarOpen(true)
+                }}
+                className="flex items-center gap-1.5 min-h-[32px] py-[5px] px-1.5 mx-1 w-[calc(100%-8px)] rounded-md text-sm cursor-default select-none outline-none dark:hover:bg-neutral-800 hover:text-foreground transition-colors"
+              >
+                <CheckSquare className="h-4 w-4 text-muted-foreground" />
+                <span>View Tasks</span>
+              </button>
+            )}
             <button
               onClick={handleOpenFolder}
               disabled={openFolder.isPending}
