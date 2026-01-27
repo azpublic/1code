@@ -66,6 +66,10 @@ export {
   // Interview settings
   interviewTimeoutSecondsAtom,
 
+  // Permission settings
+  agentPermissionLocalModeAtom,
+  agentPermissionWorktreeModeAtom,
+
   // Types
   type SavedRepo,
   type SelectedProject,

@@ -839,3 +839,33 @@ export const interviewTimeoutSecondsAtom = atomWithStorage<number>(
   createSettingsStorage<number>(),
   { getOnInit: true },
 )
+
+/**
+ * Agent permission mode for Local mode
+ * Controls when Claude can run tools without asking in Local mode
+ * "auto" = all tools auto-approved
+ * "prompt" = ask user before running tools
+ * "restrict" = block dangerous tools
+ * Stored in both settings.json and localStorage
+ */
+export const agentPermissionLocalModeAtom = atomWithStorage<"auto" | "prompt" | "restrict">(
+  "agents:agentPermissionLocalMode",
+  "prompt", // Default to safer option for local mode
+  createSettingsStorage<"auto" | "prompt" | "restrict">(),
+  { getOnInit: true },
+)
+
+/**
+ * Agent permission mode for Worktree mode
+ * Controls when Claude can run tools without asking in Worktree mode
+ * "auto" = all tools auto-approved
+ * "prompt" = ask user before running tools
+ * "restrict" = block dangerous tools
+ * Stored in both settings.json and localStorage
+ */
+export const agentPermissionWorktreeModeAtom = atomWithStorage<"auto" | "prompt" | "restrict">(
+  "agents:agentPermissionWorktreeMode",
+  "auto", // Default to auto-approve for worktree (isolated)
+  createSettingsStorage<"auto" | "prompt" | "restrict">(),
+  { getOnInit: true },
+)

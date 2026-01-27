@@ -16,6 +16,8 @@ import {
 } from "./features/onboarding"
 import { identify, initAnalytics, shutdown } from "./lib/analytics"
 import {
+  agentPermissionLocalModeAtom,
+  agentPermissionWorktreeModeAtom,
   anthropicOnboardingCompletedAtom, apiKeyOnboardingCompletedAtom,
   billingMethodAtom,
   defaultWorktreeBaseLocationAtom,
@@ -57,6 +59,8 @@ function AppContent() {
   const setSelectedChatId = useSetAtom(selectedAgentChatIdAtom)
   const defaultWorktreeBaseLocation = useAtomValue(defaultWorktreeBaseLocationAtom)
   const interviewTimeoutSeconds = useAtomValue(interviewTimeoutSecondsAtom)
+  const agentPermissionLocal = useAtomValue(agentPermissionLocalModeAtom)
+  const agentPermissionWorktree = useAtomValue(agentPermissionWorktreeModeAtom)
   const { setActiveSubChat, addToOpenSubChats, setChatId } = useAgentSubChatStore()
 
   // Sync default worktree location and interview timeout to main process on app startup
@@ -84,6 +88,22 @@ function AppContent() {
         console.log("[App] Synced interview timeout to main process:", interviewTimeoutSeconds)
       } catch (error) {
         console.error("[App] Failed to sync interview timeout:", error)
+      }
+      // Sync agent permission settings
+      try {
+        await Promise.all([
+          settingsSetMutation.mutateAsync({
+            key: "agentPermissionLocalMode",
+            value: agentPermissionLocal,
+          }),
+          settingsSetMutation.mutateAsync({
+            key: "agentPermissionWorktreeMode",
+            value: agentPermissionWorktree,
+          }),
+        ])
+        console.log("[App] Synced agent permission settings to main process:", { agentPermissionLocal, agentPermissionWorktree })
+      } catch (error) {
+        console.error("[App] Failed to sync agent permission settings:", error)
       }
     }
     syncSettings()
