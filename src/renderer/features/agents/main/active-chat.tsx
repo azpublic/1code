@@ -116,6 +116,7 @@ import {
   planEditRefetchTriggerAtomFamily,
   workspaceDiffCacheAtomFamily,
   pendingPrMessageAtom,
+  pendingMergeToMainMessageAtom,
   pendingReviewMessageAtom,
   pendingUserQuestionsAtom,
   planSidebarOpenAtomFamily,
@@ -198,7 +199,7 @@ import { SubChatSelector } from "../ui/sub-chat-selector"
 import { SubChatStatusCard } from "../ui/sub-chat-status-card"
 import { TextSelectionPopover } from "../ui/text-selection-popover"
 import { autoRenameAgentChat } from "../utils/auto-rename"
-import { generateCommitToPrMessage, generatePrMessage, generateReviewMessage } from "../utils/pr-message"
+import { generateCommitToPrMessage, generateMergeToMainMessage, generatePrMessage, generateReviewMessage } from "../utils/pr-message"
 import { ChatInputArea } from "./chat-input-area"
 import { IsolatedMessagesSection } from "./isolated-messages-section"
 import { DetailsSidebar } from "../../details-sidebar/details-sidebar"
@@ -2470,6 +2471,24 @@ const ChatViewInner = memo(function ChatViewInner({
       })
     }
   }, [pendingConflictMessage, isStreaming, sendMessage, setPendingConflictMessage])
+
+  // Watch for pending Merge to Main message and send it
+  const [pendingMergeToMainMessage, setPendingMergeToMainMessage] = useAtom(
+    pendingMergeToMainMessageAtom,
+  )
+
+  useEffect(() => {
+    if (pendingMergeToMainMessage && !isStreaming) {
+      // Clear the pending message immediately to prevent double-sending
+      setPendingMergeToMainMessage(null)
+
+      // Send the message to Claude
+      sendMessage({
+        role: "user",
+        parts: [{ type: "text", text: pendingMergeToMainMessage }],
+      })
+    }
+  }, [pendingMergeToMainMessage, isStreaming, sendMessage, setPendingMergeToMainMessage])
 
   // Handle pending "Build plan" from sidebar (atom - effect is defined after handleApprovePlan)
   const [pendingBuildPlanSubChatId, setPendingBuildPlanSubChatId] = useAtom(
@@ -5184,7 +5203,9 @@ export function ChatView({
   // Handle Commit to existing PR - sends a message to Claude to commit and push
   // selectedPaths parameter is optional - if provided, only those files will be mentioned
   const [isCommittingToPr, setIsCommittingToPr] = useState(false)
-  const handleCommitToPr = useCallback(async (_selectedPaths?: string[]) => {
+
+  // Handle Push to PR - sends a message to Claude to commit and push
+  const handleCommitPush = useCallback(async (_selectedPaths?: string[]) => {
     if (!chatId) {
       toast.error("Chat ID is required", { position: "top-center" })
       return
@@ -5209,6 +5230,35 @@ export function ChatView({
       setIsCommittingToPr(false)
     }
   }, [chatId, setPendingPrMessage])
+
+  // Handle Merge to Main - sends a message to Claude to commit and merge
+  const setPendingMergeToMainMessage = useSetAtom(pendingMergeToMainMessageAtom)
+
+  const handleMergeToMain = useCallback(async (_selectedPaths?: string[]) => {
+    if (!chatId) {
+      toast.error("Chat ID is required", { position: "top-center" })
+      return
+    }
+
+    try {
+      setIsCommittingToPr(true)
+      const context = await trpcClient.chats.getPrContext.query({ chatId })
+      if (!context) {
+        toast.error("Could not get git context", { position: "top-center" })
+        return
+      }
+
+      const message = generateMergeToMainMessage(context)
+      setPendingMergeToMainMessage(message)
+    } catch (error) {
+      toast.error(
+        error instanceof Error ? error.message : "Failed to prepare merge request",
+        { position: "top-center" },
+      )
+    } finally {
+      setIsCommittingToPr(false)
+    }
+  }, [chatId, setPendingMergeToMainMessage])
 
   // Handle commit success - refresh diff stats after direct commit
   const handleCommitSuccess = useCallback(() => {
@@ -6761,7 +6811,8 @@ Make sure to preserve all functionality from both branches when resolving confli
             setIsDiffSidebarOpen={setIsDiffSidebarOpen}
             diffStats={diffStats}
             parsedFileDiffs={parsedFileDiffs}
-            onCommit={handleCommitToPr}
+            onMergeToMain={handleMergeToMain}
+            onCommitPush={handleCommitPush}
             isCommitting={isCommittingToPr}
             onCommitSuccess={handleCommitSuccess}
             onExpandTerminal={() => setIsTerminalSidebarOpen(true)}

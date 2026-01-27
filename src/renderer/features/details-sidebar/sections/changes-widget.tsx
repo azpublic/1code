@@ -4,13 +4,19 @@ import { memo, useCallback, useState, useEffect } from "react"
 import { useAtom } from "jotai"
 import { Button } from "@/components/ui/button"
 import { Checkbox } from "@/components/ui/checkbox"
-import { ArrowUpRight } from "lucide-react"
+import { ArrowUpRight, ChevronDown, Check } from "lucide-react"
 import { DiffIcon } from "@/components/ui/icons"
 import {
   Tooltip,
   TooltipContent,
   TooltipTrigger,
 } from "@/components/ui/tooltip"
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu"
 import { Kbd } from "@/components/ui/kbd"
 import { cn } from "@/lib/utils"
 import { useResolvedHotkeyDisplay } from "@/lib/hotkeys"
@@ -27,12 +33,18 @@ import { useAtomValue } from "jotai"
 import { selectedOllamaModelAtom } from "@/lib/atoms"
 import type { ParsedDiffFile } from "../types"
 
+// Action type for the dropdown button
+type AutoActionType = "merge" | "push"
+
 interface ChangesWidgetProps {
   chatId: string
   worktreePath?: string | null
   diffStats?: { additions: number; deletions: number; fileCount: number } | null
   parsedFileDiffs?: ParsedDiffFile[] | null
-  onCommit?: (selectedPaths: string[]) => void
+  /** Callback for "Merge to Main" action - sends instructions to AI chat */
+  onMergeToMain?: (selectedPaths: string[]) => void
+  /** Callback for "Push to PR" action - sends instructions to AI chat */
+  onCommitPush?: (selectedPaths: string[]) => void
   isCommitting?: boolean
   onExpand?: () => void
   /** Called when a file is clicked - should open diff sidebar with this file selected */
@@ -72,7 +84,8 @@ export const ChangesWidget = memo(function ChangesWidget({
   worktreePath,
   diffStats,
   parsedFileDiffs,
-  onCommit,
+  onMergeToMain,
+  onCommitPush,
   isCommitting = false,
   onExpand,
   onFileSelect,
@@ -120,6 +133,20 @@ export const ChangesWidget = memo(function ChangesWidget({
 
   // State for direct commit loading
   const [isDirectCommitting, setIsDirectCommitting] = useState(false)
+
+  // Action type for the dropdown button (persisted in localStorage)
+  const [selectedActionType, setSelectedActionType] = useState<AutoActionType>(() => {
+    if (typeof window === "undefined") return "merge"
+    const saved = localStorage.getItem("auto-action-type")
+    return (saved === "push" ? "push" : "merge") as AutoActionType
+  })
+
+  // Save to localStorage when changed
+  useEffect(() => {
+    if (typeof window !== "undefined") {
+      localStorage.setItem("auto-action-type", selectedActionType)
+    }
+  }, [selectedActionType])
 
   // Selection state - all files selected by default
   const [selectedForCommit, setSelectedForCommit] = useState<Set<string>>(new Set())
@@ -240,8 +267,36 @@ export const ChangesWidget = memo(function ChangesWidget({
     const selectedPaths = displayFiles
       .filter((f) => selectedForCommit.has(getDisplayPath(f)))
       .map((f) => getDisplayPath(f))
-    onCommit?.(selectedPaths)
-  }, [displayFiles, selectedForCommit, getDisplayPath, onCommit])
+    onCommitPush?.(selectedPaths)
+  }, [displayFiles, selectedForCommit, getDisplayPath, onCommitPush])
+
+  // Handle clicking the main button - fires current action
+  const handleAutoAction = useCallback(() => {
+    const selectedPaths = displayFiles
+      .filter((f) => selectedForCommit.has(getDisplayPath(f)))
+      .map((f) => getDisplayPath(f))
+
+    if (selectedActionType === "merge") {
+      onMergeToMain?.(selectedPaths)
+    } else {
+      onCommitPush?.(selectedPaths)
+    }
+  }, [displayFiles, selectedForCommit, getDisplayPath, selectedActionType, onMergeToMain, onCommitPush])
+
+  // Handle selecting from dropdown - changes action AND fires it
+  const handleActionSelect = useCallback((actionType: AutoActionType) => {
+    setSelectedActionType(actionType)
+    // Fire the action immediately after selection
+    const selectedPaths = displayFiles
+      .filter((f) => selectedForCommit.has(getDisplayPath(f)))
+      .map((f) => getDisplayPath(f))
+
+    if (actionType === "merge") {
+      onMergeToMain?.(selectedPaths)
+    } else {
+      onCommitPush?.(selectedPaths)
+    }
+  }, [displayFiles, selectedForCommit, getDisplayPath, onMergeToMain, onCommitPush])
 
   return (
     <div className="mx-2 mb-2">
@@ -345,7 +400,7 @@ export const ChangesWidget = memo(function ChangesWidget({
 
             {/* Action buttons */}
             <div className="flex flex-col gap-2 p-2 border-t border-border/50">
-              {/* Primary action row - Commit and Auto Commit Push */}
+              {/* Primary action row - Commit and Auto Action (Merge/Push) */}
               <div className="flex gap-2">
                 {/* Commit button - direct commit via tRPC */}
                 <Button
@@ -358,16 +413,64 @@ export const ChangesWidget = memo(function ChangesWidget({
                   {isDirectCommitting ? "Committing..." : `Commit ${selectedCount} file${selectedCount !== 1 ? "s" : ""}`}
                 </Button>
 
-                {/* Auto commit push button - sends instructions to AI chat */}
-                {onCommit && (
-                  <Button
-                    size="sm"
-                    className="flex-1 h-7 text-xs bg-orange-500 hover:bg-orange-600 text-white"
-                    onClick={handleAutoCommitPush}
-                    disabled={isCommitting || selectedCount === 0}
-                  >
-                    {isCommitting ? "Sending..." : `Auto commit push ${selectedCount} file${selectedCount !== 1 ? "s" : ""}`}
-                  </Button>
+                {/* Split dropdown button for Merge to Main / Push to PR */}
+                {(onMergeToMain || onCommitPush) && (
+                  <div className="flex-1 flex -space-x-px">
+                    {/* Main action button */}
+                    <Button
+                      size="sm"
+                      className={cn(
+                        "flex-1 h-7 text-xs rounded-r-none",
+                        selectedActionType === "merge"
+                          ? "bg-cyan-500 hover:bg-cyan-600 text-white"
+                          : "bg-orange-500 hover:bg-orange-600 text-white"
+                      )}
+                      onClick={handleAutoAction}
+                      disabled={isCommitting || selectedCount === 0}
+                    >
+                      {isCommitting
+                        ? "Sending..."
+                        : selectedActionType === "merge"
+                          ? `Merge ${selectedCount} file${selectedCount !== 1 ? "s" : ""}`
+                          : `Push ${selectedCount} file${selectedCount !== 1 ? "s" : ""}`
+                      }
+                    </Button>
+
+                    {/* Dropdown trigger */}
+                    <DropdownMenu>
+                      <DropdownMenuTrigger asChild>
+                        <Button
+                          size="icon"
+                          className={cn(
+                            "h-7 w-7 rounded-l-none",
+                            selectedActionType === "merge"
+                              ? "bg-cyan-500 hover:bg-cyan-600 text-white"
+                              : "bg-orange-500 hover:bg-orange-600 text-white"
+                          )}
+                          disabled={isCommitting || selectedCount === 0}
+                          aria-label="More options"
+                        >
+                          <ChevronDown className="size-3.5" />
+                        </Button>
+                      </DropdownMenuTrigger>
+                      <DropdownMenuContent align="end" className="min-w-[160px]">
+                        <DropdownMenuItem
+                          onClick={() => handleActionSelect("merge")}
+                          className="flex items-center gap-2"
+                        >
+                          <span className="flex-1">Merge to Main</span>
+                          {selectedActionType === "merge" && <Check className="size-4" />}
+                        </DropdownMenuItem>
+                        <DropdownMenuItem
+                          onClick={() => handleActionSelect("push")}
+                          className="flex items-center gap-2"
+                        >
+                          <span className="flex-1">Push to PR</span>
+                          {selectedActionType === "push" && <Check className="size-4" />}
+                        </DropdownMenuItem>
+                      </DropdownMenuContent>
+                    </DropdownMenu>
+                  </div>
                 )}
               </div>
 

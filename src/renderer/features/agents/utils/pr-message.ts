@@ -73,6 +73,35 @@ Please commit and push these changes to update the PR:
 }
 
 /**
+ * Generates a message for Claude to commit changes and merge to main branch
+ */
+export function generateMergeToMainMessage(context: PrContext): string {
+  const { branch, baseBranch, uncommittedCount } = context
+
+  if (uncommittedCount === 0) {
+    return `All changes are already committed. Use git to merge ${branch} into ${baseBranch} if needed.`
+  }
+
+  return `There are ${uncommittedCount} uncommitted changes on branch ${branch}.
+This is a git worktree that shares its repository with the main repo.
+
+Please commit these changes and merge them into the main branch (${baseBranch}):
+
+1. In the current worktree, commit the uncommitted changes with a clear, concise commit message
+2. Navigate to the main repository and checkout the ${baseBranch} branch
+3. Merge ${branch} into ${baseBranch}
+4. If there are merge conflicts:
+   - Analyze both sets of changes carefully
+   - Preserve the correct code from both branches
+   - Resolve conflicts by keeping the appropriate changes
+   - Consider the intent of both branches when resolving
+5. If any of these steps fail or seem ambiguous, ask the user for guidance
+
+Important: The worktree should remain on branch ${branch} after the merge completes.
+Do not switch the worktree's branch - only switch to ${baseBranch} in the main repo.`
+}
+
+/**
  * Generates a message for Claude to perform a code review
  */
 export function generateReviewMessage(context: PrContext): string {
