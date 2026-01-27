@@ -55,6 +55,13 @@ export default defineConfig({
 
     // Global globals
     globals: true,
+
+    // Configure different environments for different test patterns
+    environmentMatchGlobs: [
+      // Main process tests run in Node environment
+      { pattern: 'tests/unit/worktree-*.test.ts', environment: 'node' },
+      { pattern: 'tests/e2e/worktree-*.test.ts', environment: 'node' },
+    ],
   },
 
   // Resolve aliases for non-test files too

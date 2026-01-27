@@ -1,4 +1,5 @@
 import { execFile } from "node:child_process";
+import { existsSync } from "node:fs";
 import { randomBytes } from "node:crypto";
 import { mkdir, readFile, stat, writeFile } from "node:fs/promises";
 import { devNull, homedir } from "node:os";
@@ -12,7 +13,6 @@ import {
 } from "unique-names-generator";
 import { checkGitLfsAvailable, getShellEnvironment } from "./shell-env";
 import { executeWorktreeSetup } from "./worktree-config";
-import { generateWorktreeFolderName } from "./worktree-naming";
 import { getDatabase } from "../db";
 import { projects } from "../db/schema";
 import { eq } from "drizzle-orm";
@@ -1092,11 +1092,18 @@ export async function createWorktreeForChat(
 		// Use provided base branch or auto-detect
 		const baseBranch = selectedBaseBranch || await getDefaultBranch(projectPath);
 
-		const branch = generateBranchName();
+		let branch = generateBranchName();
 		const worktreesDir = await getWorktreeBaseLocation(projectId);
 		const projectWorktreeDir = join(worktreesDir, projectSlug);
-		const folderName = generateWorktreeFolderName(projectWorktreeDir);
-		const worktreePath = join(projectWorktreeDir, folderName);
+
+		// Verify folder doesn't already exist (extremely rare with hex suffix)
+		const tentativePath = join(projectWorktreeDir, branch);
+		if (existsSync(tentativePath)) {
+			console.warn(`[Worktree] Folder already exists for branch ${branch}, regenerating`);
+			// Regenerate once - collisions are astronomically rare with hex suffix
+			branch = generateBranchName();
+		}
+		const worktreePath = join(projectWorktreeDir, branch);
 
 		// Determine startPoint based on branch type
 		// For local branches, use the local ref directly
