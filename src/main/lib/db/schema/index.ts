@@ -30,6 +30,7 @@ export const projects = sqliteTable("projects", {
 
 export const projectsRelations = relations(projects, ({ many }) => ({
   chats: many(chats),
+  tasks: many(tasks),
 }))
 
 // ============ CHATS ============
@@ -132,6 +133,38 @@ export const anthropicSettings = sqliteTable("anthropic_settings", {
   ),
 })
 
+// ============ TASKS ============
+export const tasks = sqliteTable("tasks", {
+  id: text("id")
+    .primaryKey()
+    .$defaultFn(() => createId()),
+  projectId: text("project_id")
+    .notNull()
+    .references(() => projects.id, { onDelete: "cascade" }),
+  title: text("title").notNull(),
+  description: text("description"),
+  status: text("status").notNull().default("todo"), // "todo" | "in-progress" | "done"
+  priority: text("priority").notNull().default("medium"), // "low" | "medium" | "high"
+  planPath: text("plan_path"), // Path to plan file for AI-assisted editing
+  createdAt: integer("created_at", { mode: "timestamp" }).$defaultFn(
+    () => new Date(),
+  ),
+  updatedAt: integer("updated_at", { mode: "timestamp" }).$defaultFn(
+    () => new Date(),
+  ),
+  completedAt: integer("completed_at", { mode: "timestamp" }),
+}, (table) => [
+  index("tasks_project_id_idx").on(table.projectId),
+  index("tasks_status_idx").on(table.status),
+])
+
+export const tasksRelations = relations(tasks, ({ one }) => ({
+  project: one(projects, {
+    fields: [tasks.projectId],
+    references: [projects.id],
+  }),
+}))
+
 // ============ TYPE EXPORTS ============
 export type Project = typeof projects.$inferSelect
 export type NewProject = typeof projects.$inferInsert
@@ -139,6 +172,8 @@ export type Chat = typeof chats.$inferSelect
 export type NewChat = typeof chats.$inferInsert
 export type SubChat = typeof subChats.$inferSelect
 export type NewSubChat = typeof subChats.$inferInsert
+export type Task = typeof tasks.$inferSelect
+export type NewTask = typeof tasks.$inferInsert
 export type ClaudeCodeCredential = typeof claudeCodeCredentials.$inferSelect
 export type NewClaudeCodeCredential = typeof claudeCodeCredentials.$inferInsert
 export type AnthropicAccount = typeof anthropicAccounts.$inferSelect
