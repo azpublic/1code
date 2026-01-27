@@ -66,6 +66,8 @@ interface DetailsSidebarProps {
   onCommit?: (selectedPaths: string[]) => void
   /** Whether commit is in progress */
   isCommitting?: boolean
+  /** Called after a successful direct commit to refresh UI state */
+  onCommitSuccess?: () => void
   /** Callbacks to expand widgets to legacy sidebars */
   onExpandTerminal?: () => void
   onExpandPlan?: () => void
@@ -84,6 +86,7 @@ interface DetailsSidebarProps {
 
 export function DetailsSidebar({
   chatId,
+  onCommitSuccess,
   worktreePath,
   planPath,
   mode,
@@ -392,6 +395,7 @@ export function DetailsSidebar({
                     parsedFileDiffs={parsedFileDiffs}
                     onCommit={onCommit}
                     isCommitting={isCommitting}
+                    onCommitSuccess={onCommitSuccess}
                     // For remote chats on desktop, don't provide expand/file actions
                     onExpand={canOpenDiff ? onExpandDiff : undefined}
                     onFileSelect={canOpenDiff ? onFileSelect : undefined}
