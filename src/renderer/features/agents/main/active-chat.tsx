@@ -3959,6 +3959,8 @@ const ChatViewInner = memo(function ChatViewInner({
             isMobile={false}
             chatId={subChatId}
             hasMessages={messages.length > 0}
+            projectName={(agentChat as any)?.project?.name}
+            branch={agentChat?.branch ?? undefined}
           />
         </div>
       )}

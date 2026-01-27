@@ -14,6 +14,8 @@ interface ChatTitleEditorProps {
   disabled?: boolean
   chatId?: string
   hasMessages?: boolean
+  projectName?: string
+  branch?: string
 }
 
 // Custom comparison to prevent re-renders during streaming
@@ -27,7 +29,9 @@ function areTitlePropsEqual(
     prev.isMobile === next.isMobile &&
     prev.disabled === next.disabled &&
     prev.chatId === next.chatId &&
-    prev.hasMessages === next.hasMessages
+    prev.hasMessages === next.hasMessages &&
+    prev.projectName === next.projectName &&
+    prev.branch === next.branch
   )
 }
 
@@ -39,6 +43,8 @@ export const ChatTitleEditor = memo(function ChatTitleEditor({
   disabled = false,
   chatId,
   hasMessages = false,
+  projectName,
+  branch,
 }: ChatTitleEditorProps) {
   const [isEditing, setIsEditing] = useState(false)
   const [editValue, setEditValue] = useState(name)
@@ -142,7 +148,7 @@ export const ChatTitleEditor = memo(function ChatTitleEditor({
   }
 
   // Fixed height to prevent layout shift when switching between view/edit modes
-  const heightClass = isMobile ? "h-7" : "h-7"
+  const heightClass = isMobile ? "h-7" : branch ? "h-10" : "h-7"
 
   return (
     <div
@@ -168,13 +174,21 @@ export const ChatTitleEditor = memo(function ChatTitleEditor({
         <div
           onClick={handleClick}
           className={cn(
-            "text-left w-full h-full",
-            isMobile ? "text-base" : "text-lg",
-            "font-medium",
-            hasRealName ? "text-foreground cursor-pointer" : "cursor-default",
+            "text-left w-full h-full flex flex-col justify-center",
+            hasRealName ? "cursor-pointer" : "cursor-default",
           )}
         >
-          <span className="block truncate">
+          <span className={cn(
+            "block truncate",
+            isMobile ? "text-base" : "text-lg",
+            "font-medium text-foreground"
+          )}>
+            {projectName && (
+              <>
+                <span className="font-medium">{projectName}</span>
+                <span className="mx-1 text-muted-foreground">•</span>
+              </>
+            )}
             <TypewriterText
               text={name}
               placeholder={placeholder}
@@ -183,6 +197,11 @@ export const ChatTitleEditor = memo(function ChatTitleEditor({
               showPlaceholder={hasMessages}
             />
           </span>
+          {branch && (
+            <span className="text-xs text-muted-foreground truncate mt-0.5">
+              {branch}
+            </span>
+          )}
         </div>
       )}
     </div>
