@@ -38,7 +38,7 @@ import {
   useRenameRemoteChat,
 } from "../../lib/hooks/use-remote-chats"
 import { ArchivePopover } from "../agents/ui/archive-popover"
-import { ChevronDown, MoreHorizontal, Columns3 } from "lucide-react"
+import { ChevronDown, MoreHorizontal, Columns3, CheckSquare } from "lucide-react"
 // import { useRouter } from "next/navigation" // Desktop doesn't use next/navigation
 // import { useCombinedAuth } from "@/lib/hooks/use-combined-auth"
 const useCombinedAuth = () => ({ userId: null })
@@ -115,6 +115,7 @@ import {
   pendingUserQuestionsAtom,
   type UndoItem,
 } from "../agents/atoms"
+import { tasksSidebarOpenAtom } from "../tasks/atoms"
 import { NetworkStatus } from "../../components/ui/network-status"
 import { useAgentSubChatStore, OPEN_SUB_CHATS_CHANGE_EVENT } from "../agents/stores/sub-chat-store"
 import { getWindowId } from "../../contexts/WindowContext"
@@ -1095,6 +1096,43 @@ const KanbanButton = memo(function KanbanButton() {
       <TooltipContent>
         Kanban View
         {openKanbanHotkey && <Kbd>{openKanbanHotkey}</Kbd>}
+      </TooltipContent>
+    </Tooltip>
+  )
+})
+
+// Isolated Tasks Button - toggles tasks sidebar
+const TasksButton = memo(function TasksButton() {
+  const [tasksSidebarOpen, setTasksSidebarOpen] = useAtom(tasksSidebarOpenAtom)
+  const [selectedProject] = useAtom(selectedProjectAtom)
+
+  const handleClick = useCallback(() => {
+    if (!selectedProject) return
+    setTasksSidebarOpen(!tasksSidebarOpen)
+  }, [tasksSidebarOpen, setTasksSidebarOpen, selectedProject])
+
+  // Disable button if no project is selected
+  if (!selectedProject) return null
+
+  return (
+    <Tooltip delayDuration={500}>
+      <TooltipTrigger asChild>
+        <button
+          type="button"
+          onClick={handleClick}
+          className={cn(
+            "flex items-center justify-center h-7 w-7 rounded-md transition-[background-color,color,transform] duration-150 ease-out active:scale-[0.97] outline-offset-2 focus-visible:outline focus-visible:outline-2 focus-visible:outline-ring/70",
+            tasksSidebarOpen
+              ? "text-foreground bg-muted/50"
+              : "text-muted-foreground hover:text-foreground hover:bg-muted/50",
+          )}
+        >
+          <CheckSquare className="h-4 w-4" />
+        </button>
+      </TooltipTrigger>
+      <TooltipContent>
+        Tasks
+        {tasksSidebarOpen && <span className="ml-2 text-muted-foreground">(Open)</span>}
       </TooltipContent>
     </Tooltip>
   )
@@ -3283,6 +3321,9 @@ export function AgentsSidebar({
 
                 {/* Kanban View Button - isolated component */}
                 <KanbanButton />
+
+                {/* Tasks Button - isolated component */}
+                <TasksButton />
 
                 {/* Archive Button - isolated component to prevent sidebar re-renders */}
                 <ArchiveSection archivedChatsCount={archivedChatsCount} />

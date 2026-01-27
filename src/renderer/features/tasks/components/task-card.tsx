@@ -12,10 +12,18 @@ import { Badge } from "../../../components/ui/badge"
 import { cn } from "../../../lib/utils"
 import { trpc } from "../../../lib/trpc"
 import { editingTaskAtom, taskFormDialogOpenAtom } from "../atoms"
-import type { Task } from "@server/types"
 
 interface TaskCardProps {
-  task: Task
+  task: {
+    id: string
+    title: string
+    description: string | null
+    status: string
+    priority: string
+    createdAt: Date
+    updatedAt: Date
+    completedAt: Date | null
+  }
 }
 
 // Status colors for badge
