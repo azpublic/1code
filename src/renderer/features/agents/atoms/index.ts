@@ -525,6 +525,10 @@ export const selectedCommitAtom = atom<SelectedCommit>(null)
 // Set by ChatView when "Create PR" is clicked, consumed by ChatViewInner
 export const pendingPrMessageAtom = atom<string | null>(null)
 
+// Pending Merge to Main message to send to chat
+// Set by ChatView when "Merge to Main" is clicked, consumed by ChatViewInner
+export const pendingMergeToMainMessageAtom = atom<string | null>(null)
+
 // Pending Review message to send to chat
 // Set by ChatView when "Review" is clicked, consumed by ChatViewInner
 export const pendingReviewMessageAtom = atom<string | null>(null)
