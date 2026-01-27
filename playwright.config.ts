@@ -8,15 +8,18 @@ import { defineConfig, devices } from '@playwright/test'
  */
 export default defineConfig({
   testDir: './tests/e2e',
+  testMatch: '**/*.spec.ts', // Only run .spec.ts files (Playwright tests), not .test.ts files (Vitest tests)
   fullyParallel: false, // Electron apps should run tests sequentially
   forbidOnly: !!process.env.CI,
   retries: process.env.CI ? 2 : 0,
   workers: 1, // Single worker for Electron
   reporter: 'html',
+  tsconfig: './tsconfig.test.json', // Use test-specific tsconfig
 
   use: {
     trace: 'on-first-retry',
     screenshot: 'only-on-failure',
+    actionTimeout: 10000,
   },
 
   projects: [
@@ -24,16 +27,8 @@ export default defineConfig({
       name: 'electron',
       use: {
         // Electron-specific config
-        // Note: We'll launch Electron manually in tests
-        // This is just a placeholder project
+        // We'll launch Electron manually in tests using _electron
       },
     },
   ],
-
-  // Run local build server before starting the tests
-  // webServer: {
-  //   command: 'bun run build',
-  //   url: 'http://localhost:3000',
-  //   reuseExistingServer: !process.env.CI,
-  // },
 })

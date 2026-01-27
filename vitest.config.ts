@@ -39,6 +39,7 @@ export default defineConfig({
       'node_modules/',
       'dist/',
       'out/',
+      'tests/e2e/**/*.spec.ts', // Exclude Playwright E2E tests from Vitest
     ],
 
     // Aliases (same as electron.vite.config.ts)

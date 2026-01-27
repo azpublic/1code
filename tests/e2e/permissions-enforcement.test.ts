@@ -5,11 +5,15 @@ import { tmpdir } from 'os'
 import { randomBytes } from 'crypto'
 import Database from 'better-sqlite3'
 import { drizzle } from 'drizzle-orm/better-sqlite3'
+import { migrate } from 'drizzle-orm/better-sqlite3/migrator'
 import { eq } from 'drizzle-orm'
 
 // Import the actual main process code
 import { projects } from '../../src/main/lib/db/schema'
 import { MockProject } from './fixtures/mock-project'
+
+// Path to migrations folder (from out/test -> project root -> drizzle)
+const MIGRATIONS_PATH = join(__dirname, '../../drizzle')
 
 /**
  * E2E Test: Permission Settings Enforcement
@@ -47,6 +51,9 @@ class E2ETestEnvironment {
 
     this.db = new Database(this.dbPath)
     this.client = drizzle(this.db)
+
+    // Run migrations to set up schema
+    migrate(this.client, { migrationsFolder: MIGRATIONS_PATH })
   }
 
   /**
@@ -182,10 +189,10 @@ class E2ETestEnvironment {
   }
 
   cleanup() {
+    this.db.close()
     if (existsSync(this.testDir)) {
       rmSync(this.testDir, { recursive: true, force: true })
     }
-    this.db.close()
   }
 }
 
@@ -207,7 +214,7 @@ describe('E2E: Permission Settings Enforcement', () => {
   })
 
   describe('Global default permissions', () => {
-    it('should use global defaults when no project override exists', () => {
+    it('should use global defaults when no project override exists', async () => {
       // Set global defaults
       env.setGlobalSettings({
         agentPermissionLocalMode: 'prompt',
@@ -215,7 +222,7 @@ describe('E2E: Permission Settings Enforcement', () => {
       })
 
       // Create project with no overrides
-      env.createProject(project1)
+      await env.createProject(project1)
 
       // Test Local mode (no worktree)
       const localResult = env.getPermissionMode({
@@ -242,7 +249,7 @@ describe('E2E: Permission Settings Enforcement', () => {
   })
 
   describe('Project-level override: Local mode', () => {
-    it('should use project override for local mode', () => {
+    it('should use project override for local mode', async () => {
       // Set global defaults
       env.setGlobalSettings({
         agentPermissionLocalMode: 'prompt', // Global: prompt
@@ -250,7 +257,7 @@ describe('E2E: Permission Settings Enforcement', () => {
       })
 
       // Create project with override: auto (override global prompt)
-      env.createProject(project1, {
+      await env.createProject(project1, {
         agentPermissionLocalMode: 'auto',
       })
 
@@ -266,13 +273,13 @@ describe('E2E: Permission Settings Enforcement', () => {
       expect(result.allowDangerouslySkipPermissions).toBe(true)
     })
 
-    it('should fall back to global when project override is null', () => {
+    it('should fall back to global when project override is null', async () => {
       env.setGlobalSettings({
         agentPermissionLocalMode: 'restrict',
       })
 
       // Create project with null override (explicitly use global)
-      env.createProject(project1, {
+      await env.createProject(project1, {
         agentPermissionLocalMode: null,
       })
 
@@ -319,14 +326,14 @@ describe('E2E: Permission Settings Enforcement', () => {
   })
 
   describe('Project-level override: Worktree mode', () => {
-    it('should use project override for worktree mode', () => {
+    it('should use project override for worktree mode', async () => {
       env.setGlobalSettings({
         agentPermissionLocalMode: 'prompt',
         agentPermissionWorktreeMode: 'auto', // Global: auto
       })
 
       // Create project with override: prompt (override global auto)
-      env.createProject(project1, {
+      await env.createProject(project1, {
         agentPermissionWorktreeMode: 'prompt',
       })
 
@@ -341,14 +348,14 @@ describe('E2E: Permission Settings Enforcement', () => {
       expect(result.allowDangerouslySkipPermissions).toBe(false)
     })
 
-    it('should allow independent local and worktree overrides', () => {
+    it('should allow independent local and worktree overrides', async () => {
       env.setGlobalSettings({
         agentPermissionLocalMode: 'prompt',
         agentPermissionWorktreeMode: 'auto',
       })
 
       // Project with different settings for each mode
-      env.createProject(project1, {
+      await env.createProject(project1, {
         agentPermissionLocalMode: 'restrict',
         agentPermissionWorktreeMode: 'restrict',
       })
@@ -371,12 +378,12 @@ describe('E2E: Permission Settings Enforcement', () => {
   })
 
   describe('Restrict mode', () => {
-    it('should use plan permissions in restrict mode', () => {
+    it('should use plan permissions in restrict mode', async () => {
       env.setGlobalSettings({
         agentPermissionLocalMode: 'prompt',
       })
 
-      env.createProject(project1, {
+      await env.createProject(project1, {
         agentPermissionLocalMode: 'restrict',
       })
 
@@ -394,14 +401,14 @@ describe('E2E: Permission Settings Enforcement', () => {
   })
 
   describe('Plan mode override', () => {
-    it('should always use plan permissions regardless of settings', () => {
+    it('should always use plan permissions regardless of settings', async () => {
       // Even with auto-approve enabled
       env.setGlobalSettings({
         agentPermissionLocalMode: 'auto',
         agentPermissionWorktreeMode: 'auto',
       })
 
-      env.createProject(project1, {
+      await env.createProject(project1, {
         agentPermissionLocalMode: 'auto',
         agentPermissionWorktreeMode: 'auto',
       })
@@ -418,14 +425,14 @@ describe('E2E: Permission Settings Enforcement', () => {
   })
 
   describe('Real-world scenario: Safe worktree, careful local', () => {
-    it('should handle common configuration: safe worktree, careful local', () => {
+    it('should handle common configuration: safe worktree, careful local', async () => {
       // Typical setup: Auto-approve in isolated worktrees, prompt when working locally
       env.setGlobalSettings({
         agentPermissionLocalMode: 'prompt', // Be careful in main project
         agentPermissionWorktreeMode: 'auto', // Safe to experiment in worktree
       })
 
-      env.createProject(project1)
+      await env.createProject(project1)
 
       // Local mode: should prompt
       const localResult = env.getPermissionMode({
@@ -446,7 +453,7 @@ describe('E2E: Permission Settings Enforcement', () => {
   })
 
   describe('Real-world scenario: YOLO project override', () => {
-    it('should allow one project to be in yolo mode while others are safe', () => {
+    it('should allow one project to be in yolo mode while others are safe', async () => {
       // Global: safe defaults
       env.setGlobalSettings({
         agentPermissionLocalMode: 'prompt',
@@ -454,10 +461,10 @@ describe('E2E: Permission Settings Enforcement', () => {
       })
 
       // Project 1: Use safe defaults
-      env.createProject(project1)
+      await env.createProject(project1)
 
       // Project 2: YOLO mode (override)
-      env.createProject(project2, {
+      await env.createProject(project2, {
         agentPermissionLocalMode: 'auto',
         agentPermissionWorktreeMode: 'auto',
       })
