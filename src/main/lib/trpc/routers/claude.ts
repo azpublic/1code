@@ -16,7 +16,7 @@ import {
   type UIMessageChunk,
 } from "../../claude"
 import { getProjectMcpServers, GLOBAL_MCP_PATH, readClaudeConfig, type McpServerConfig } from "../../claude-config"
-import { chats, claudeCodeCredentials, getDatabase, subChats } from "../../db"
+import { chats, claudeCodeCredentials, getDatabase, projects, subChats } from "../../db"
 import { createRollbackStash } from "../../git/stash"
 import { ensureMcpTokensFresh, fetchMcpTools, fetchMcpToolsStdio, getMcpAuthStatus, startMcpOAuth } from "../../mcp-auth"
 import { fetchOAuthMetadata, getMcpBaseUrl } from "../../oauth"
@@ -981,6 +981,68 @@ ${prompt}
               preset: "claude_code" as const,
             }
 
+            // Get permission preference from settings
+            // Priority: 1) Project-level override 2) Global default
+            const settings = getSettingsManager()
+            const isWorktreeMode = !!input.worktreePath
+
+            // First, check if the project has a permission override
+            let permissionPref: "auto" | "prompt" | "restrict" | null = null
+            if (input.projectId) {
+              const db = getDatabase()
+              const project = db
+                .select({ id: projects.id, agentPermissionLocalMode: projects.agentPermissionLocalMode, agentPermissionWorktreeMode: projects.agentPermissionWorktreeMode })
+                .from(projects)
+                .where(eq(projects.id, input.projectId))
+                .get()
+
+              if (project) {
+                permissionPref = isWorktreeMode
+                  ? (project.agentPermissionWorktreeMode as "auto" | "prompt" | "restrict" | null)
+                  : (project.agentPermissionLocalMode as "auto" | "prompt" | "restrict" | null)
+              }
+            }
+
+            // Fall back to global default if no project override
+            if (!permissionPref) {
+              permissionPref = (isWorktreeMode
+                ? settings.get("agentPermissionWorktreeMode")
+                : settings.get("agentPermissionLocalMode")) as "auto" | "prompt" | "restrict" | null
+            }
+
+            // Map preference to SDK permission mode
+            let permissionMode: "bypassPermissions" | "plan" | undefined
+            let allowDangerouslySkipPermissions: boolean | undefined
+
+            if (input.mode === "plan") {
+              // Plan mode always uses plan permissions
+              permissionMode = "plan"
+            } else {
+              // Agent mode - use configured preference
+              switch (permissionPref) {
+                case "auto":
+                  permissionMode = "bypassPermissions"
+                  allowDangerouslySkipPermissions = true
+                  console.log(`[claude] Permission mode: AUTO-APPROVE (${isWorktreeMode ? "worktree" : "local"} mode)`)
+                  break
+                case "prompt":
+                  permissionMode = undefined // Let SDK prompt for each tool
+                  allowDangerouslySkipPermissions = false
+                  console.log(`[claude] Permission mode: PROMPT (${isWorktreeMode ? "worktree" : "local"} mode)`)
+                  break
+                case "restrict":
+                  permissionMode = "plan" // Use plan mode restrictions
+                  allowDangerouslySkipPermissions = false
+                  console.log(`[claude] Permission mode: RESTRICTED (${isWorktreeMode ? "worktree" : "local"} mode)`)
+                  break
+                default:
+                  // Fallback to auto-approve for backward compatibility
+                  permissionMode = "bypassPermissions"
+                  allowDangerouslySkipPermissions = true
+                  console.log(`[claude] Permission mode: AUTO-APPROVE (fallback, ${isWorktreeMode ? "worktree" : "local"} mode)`)
+              }
+            }
+
             const queryOptions = {
               prompt: finalQueryPrompt,
               options: {
@@ -992,12 +1054,9 @@ ${prompt}
                 // Pass filtered MCP servers (only working/unknown ones, skip failed/needs-auth)
                 ...(mcpServersFiltered && Object.keys(mcpServersFiltered).length > 0 && { mcpServers: mcpServersFiltered }),
                 env: finalEnv,
-                permissionMode:
-                  input.mode === "plan"
-                    ? ("plan" as const)
-                    : ("bypassPermissions" as const),
-                ...(input.mode !== "plan" && {
-                  allowDangerouslySkipPermissions: true,
+                permissionMode,
+                ...(allowDangerouslySkipPermissions !== undefined && {
+                  allowDangerouslySkipPermissions,
                 }),
                 includePartialMessages: true,
                 // Load skills from project and user directories (skip for Ollama - not supported)
