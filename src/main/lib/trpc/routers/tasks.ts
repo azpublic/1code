@@ -1,7 +1,7 @@
 import { z } from "zod"
 import { router, publicProcedure } from "../index"
 import { getDatabase, tasks } from "../../db"
-import { eq, and, desc, asc } from "drizzle-orm"
+import { eq, and, desc, asc, inArray } from "drizzle-orm"
 
 /**
  * tRPC router for task management
@@ -57,6 +57,43 @@ export const tasksRouter = router({
       .orderBy(desc(tasks.updatedAt))
       .all()
   }),
+
+  /**
+   * List tasks across multiple projects with optional filters
+   */
+  listByProjects: publicProcedure
+    .input(
+      z.object({
+        projectIds: z.array(z.string()),
+        status: z.enum(["todo", "in-progress", "done"]).optional(),
+        priority: z.enum(["low", "medium", "high"]).optional(),
+      })
+    )
+    .query(({ input }) => {
+      const db = getDatabase()
+
+      // Return empty array if no projects specified
+      if (input.projectIds.length === 0) {
+        return []
+      }
+
+      // Build conditions
+      const conditions = [inArray(tasks.projectId, input.projectIds)]
+      if (input.status) {
+        conditions.push(eq(tasks.status, input.status))
+      }
+      if (input.priority) {
+        conditions.push(eq(tasks.priority, input.priority))
+      }
+
+      // Build and execute query
+      return db
+        .select()
+        .from(tasks)
+        .where(and(...conditions))
+        .orderBy(desc(tasks.updatedAt))
+        .all()
+    }),
 
   /**
    * Get a single task by ID

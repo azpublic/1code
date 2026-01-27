@@ -13,10 +13,9 @@ import {
   anthropicOnboardingCompletedAtom,
   customHotkeysAtom,
   betaKanbanEnabledAtom,
+  taskViewVisibleAtom,
 } from "../../lib/atoms"
 import { selectedAgentChatIdAtom, selectedProjectAtom, selectedDraftIdAtom, showNewChatFormAtom } from "../agents/atoms"
-import { TasksSidebar } from "../tasks/tasks-sidebar"
-import { tasksSidebarOpenAtom, tasksSidebarWidthAtom } from "../tasks/atoms"
 import { trpc } from "../../lib/trpc"
 import { useAgentsHotkeys } from "../agents/lib/agents-hotkeys-manager"
 import { toggleSearchAtom } from "../agents/search"
@@ -89,14 +88,13 @@ export function AgentsLayout() {
 
   const [sidebarOpen, setSidebarOpen] = useAtom(agentsSidebarOpenAtom)
   const [sidebarWidth, setSidebarWidth] = useAtom(agentsSidebarWidthAtom)
-  const [tasksSidebarOpen, setTasksSidebarOpen] = useAtom(tasksSidebarOpenAtom)
-  const [tasksSidebarWidth, setTasksSidebarWidth] = useAtom(tasksSidebarWidthAtom)
   const [settingsOpen, setSettingsOpen] = useAtom(agentsSettingsDialogOpenAtom)
   const setSettingsActiveTab = useSetAtom(agentsSettingsDialogActiveTabAtom)
   const [selectedChatId, setSelectedChatId] = useAtom(selectedAgentChatIdAtom)
   const [selectedProject, setSelectedProject] = useAtom(selectedProjectAtom)
   const setSelectedDraftId = useSetAtom(selectedDraftIdAtom)
   const setShowNewChatForm = useSetAtom(showNewChatFormAtom)
+  const setTaskViewVisible = useSetAtom(taskViewVisibleAtom)
   const betaKanbanEnabled = useAtomValue(betaKanbanEnabledAtom)
   const setAnthropicOnboardingCompleted = useSetAtom(
     anthropicOnboardingCompletedAtom
@@ -230,6 +228,7 @@ export function AgentsLayout() {
     setSettingsDialogOpen: setSettingsOpen,
     setSettingsActiveTab,
     toggleChatSearch,
+    setTaskViewVisible,
     selectedChatId,
     customHotkeysConfig,
     betaKanbanEnabled,
@@ -279,13 +278,6 @@ export function AgentsLayout() {
           <div className="flex-1 overflow-hidden flex flex-col min-w-0">
             <AgentsContent />
           </div>
-
-          {/* Tasks Sidebar (right) */}
-          {tasksSidebarOpen && (
-            <div className="border-l" style={{ width: tasksSidebarWidth }}>
-              <TasksSidebar />
-            </div>
-          )}
         </div>
 
         {/* Update Banner */}

@@ -54,3 +54,25 @@ export const taskSortOrderAtom = atomWithStorage<TaskSortOrder>(
   undefined,
   { getOnInit: true },
 )
+
+// ============ TASK VIEW (Center Screen) ============
+
+// Task view mode: kanban board or list view
+export type TaskViewMode = "kanban" | "list"
+export const taskViewModeAtom = atomWithStorage<TaskViewMode>(
+  "task-view-mode",
+  "kanban",
+  undefined,
+  { getOnInit: true },
+)
+
+// Task view focus: "all" for all projects, or specific projectId
+export const taskViewFocusAtom = atomWithStorage<string>(
+  "task-view-focus",
+  "all",
+  undefined,
+  { getOnInit: true },
+)
+
+// Whether task view is currently visible in center area
+export const taskViewVisibleAtom = atom<boolean>(false)
