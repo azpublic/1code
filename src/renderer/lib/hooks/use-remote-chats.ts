@@ -8,7 +8,7 @@ import { remoteApi, type RemoteChat, type RemoteChatWithSubChats } from "../remo
  * Fetch user's teams and auto-select first team if none selected
  * Uses stale-while-revalidate: show cached immediately, validate in background
  */
-export function useUserTeams(enabled: boolean = true) {
+export function useUserTeams(enabled: boolean = false) {  // Disabled by default to prevent API spam
   const [teamId, setTeamId] = useAtom(selectedTeamIdAtom)
 
   const query = useQuery({
@@ -16,8 +16,8 @@ export function useUserTeams(enabled: boolean = true) {
     queryFn: () => remoteApi.getTeams(),
     staleTime: 5 * 60 * 1000,   // 5 min - teams rarely change
     gcTime: Infinity,           // Never garbage collect
-    refetchOnMount: true,       // Revalidate if stale
-    refetchOnWindowFocus: false,
+    refetchOnMount: false,      // Don't refetch on mount - use cached data
+    refetchOnWindowFocus: false, // Don't refetch on window focus
     enabled,
     retry: 1,
   })
@@ -57,17 +57,17 @@ export function useUserTeams(enabled: boolean = true) {
  * Fetch all remote sandbox chats for the selected team
  * Uses stale-while-revalidate: show cached immediately, refresh in background
  */
-export function useRemoteChats() {
+export function useRemoteChats(enabled: boolean = false) {  // Disabled by default to prevent API spam
   const teamId = useAtomValue(selectedTeamIdAtom)
 
   return useQuery({
     queryKey: ["remote-chats", teamId],
     queryFn: () => remoteApi.getAgentChats(teamId!),
-    enabled: !!teamId,
-    staleTime: 30 * 1000,       // Consider stale after 30s
+    enabled: !!teamId && enabled,
+    staleTime: 60 * 1000,       // Consider stale after 1 minute (increased from 30s)
     gcTime: 30 * 60 * 1000,     // Keep in cache 30 min
-    refetchOnMount: true,       // Revalidate on mount
-    refetchOnWindowFocus: true, // Revalidate when window focused
+    refetchOnMount: false,      // Don't refetch on mount - use cached data
+    refetchOnWindowFocus: false, // Don't refetch on window focus - prevents spam
     placeholderData: (prev) => prev,
   })
 }
