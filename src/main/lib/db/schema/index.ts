@@ -141,6 +141,7 @@ export const tasks = sqliteTable("tasks", {
   projectId: text("project_id")
     .notNull()
     .references(() => projects.id, { onDelete: "cascade" }),
+  chatId: text("chat_id").references(() => chats.id, { onDelete: "set null" }), // Optional link to primary chat
   title: text("title").notNull(),
   description: text("description"),
   status: text("status").notNull().default("todo"), // "todo" | "in-progress" | "done"
@@ -156,6 +157,7 @@ export const tasks = sqliteTable("tasks", {
 }, (table) => [
   index("tasks_project_id_idx").on(table.projectId),
   index("tasks_status_idx").on(table.status),
+  index("tasks_chat_id_idx").on(table.chatId),
 ])
 
 export const tasksRelations = relations(tasks, ({ one }) => ({

@@ -60,10 +60,15 @@ export function TasksSidebar() {
 
   const taskCount = 0 // Will be updated by the query
 
-  if (!isOpen) return null
+  // Dialog should always be rendered (even when sidebar is closed)
+  // so it can be opened via the button
+  const dialog = <TaskForm projectId={selectedProject?.id} />
+
+  if (!isOpen) return dialog
 
   return (
     <>
+      {dialog}
       <div className="flex flex-col h-full bg-background border-l">
         {/* Header */}
         <div className="flex items-center justify-between px-4 py-3 border-b">
@@ -151,9 +156,6 @@ export function TasksSidebar() {
           </div>
         )}
       </div>
-
-      {/* Task Form Dialog */}
-      <TaskForm projectId={selectedProject?.id} />
     </>
   )
 }

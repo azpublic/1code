@@ -15,6 +15,7 @@ import {
   betaKanbanEnabledAtom,
   taskViewVisibleAtom,
 } from "../../lib/atoms"
+import { tasksSidebarOpenAtom, tasksSidebarWidthAtom } from "../tasks/atoms"
 import { selectedAgentChatIdAtom, selectedProjectAtom, selectedDraftIdAtom, showNewChatFormAtom } from "../agents/atoms"
 import { trpc } from "../../lib/trpc"
 import { useAgentsHotkeys } from "../agents/lib/agents-hotkeys-manager"
@@ -25,6 +26,7 @@ import { TooltipProvider } from "../../components/ui/tooltip"
 import { ResizableSidebar } from "../../components/ui/resizable-sidebar"
 import { AgentsSidebar } from "../sidebar/agents-sidebar"
 import { AgentsContent } from "../agents/ui/agents-content"
+import { TasksSidebar } from "../tasks/tasks-sidebar"
 import { UpdateBanner } from "../../components/update-banner"
 import { WindowsTitleBar } from "../../components/windows-title-bar"
 import { useUpdateChecker } from "../../lib/hooks/use-update-checker"
@@ -89,6 +91,7 @@ export function AgentsLayout() {
   const [sidebarOpen, setSidebarOpen] = useAtom(agentsSidebarOpenAtom)
   const [sidebarWidth, setSidebarWidth] = useAtom(agentsSidebarWidthAtom)
   const [settingsOpen, setSettingsOpen] = useAtom(agentsSettingsDialogOpenAtom)
+  const [tasksSidebarOpen, setTasksSidebarOpen] = useAtom(tasksSidebarOpenAtom)
   const setSettingsActiveTab = useSetAtom(agentsSettingsDialogActiveTabAtom)
   const [selectedChatId, setSelectedChatId] = useAtom(selectedAgentChatIdAtom)
   const [selectedProject, setSelectedProject] = useAtom(selectedProjectAtom)
@@ -238,6 +241,10 @@ export function AgentsLayout() {
     setSidebarOpen(false)
   }, [setSidebarOpen])
 
+  const handleCloseTasksSidebar = useCallback(() => {
+    setTasksSidebarOpen(false)
+  }, [setTasksSidebarOpen])
+
   return (
     <TooltipProvider delayDuration={300}>
       {/* Global queue processor - handles message queues for all sub-chats */}
@@ -278,6 +285,24 @@ export function AgentsLayout() {
           <div className="flex-1 overflow-hidden flex flex-col min-w-0">
             <AgentsContent />
           </div>
+
+          {/* Right Sidebar (Tasks) */}
+          <ResizableSidebar
+            isOpen={!isMobile && tasksSidebarOpen}
+            onClose={handleCloseTasksSidebar}
+            widthAtom={tasksSidebarWidthAtom}
+            minWidth={200}
+            maxWidth={400}
+            side="right"
+            animationDuration={SIDEBAR_ANIMATION_DURATION}
+            initialWidth={320}
+            exitWidth={0}
+            showResizeTooltip={true}
+            className="overflow-hidden bg-background border-l"
+            style={{ borderLeftWidth: "0.5px" }}
+          >
+            <TasksSidebar />
+          </ResizableSidebar>
         </div>
 
         {/* Update Banner */}

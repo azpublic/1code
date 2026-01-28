@@ -1,6 +1,6 @@
+import React, { useEffect, useMemo, ComponentType } from "react"
 import { Provider as JotaiProvider, useAtomValue, useSetAtom } from "jotai"
 import { ThemeProvider, useTheme } from "next-themes"
-import { useEffect, useMemo, ComponentType } from "react"
 import { Toaster } from "sonner"
 import { TooltipProvider } from "./components/ui/tooltip"
 import { TRPCProvider } from "./contexts/TRPCProvider"
@@ -29,24 +29,34 @@ import { trpc } from "./lib/trpc"
 import { initializeSettingsCache } from "./lib/settings-storage"
 
 // Error Boundary to catch React rendering errors
-// Shows a toast notification instead of blocking the entire app
+// NOTE: We don't block rendering - we just show toasts and log
+// This prevents the "black screen of death" from crashing the app
 class ErrorBoundary extends React.Component<
   { children: React.ReactNode },
-  { hasError: boolean; error?: Error }
+  { errorCount: number; lastErrorTime: number }
 > {
   constructor(props: { children: React.ReactNode }) {
     super(props)
-    this.state = { hasError: false }
+    this.state = { errorCount: 0, lastErrorTime: 0 }
   }
 
   static getDerivedStateFromError(error: Error) {
     console.error("[ErrorBoundary] Caught error:", error)
-    // Return hasError: true but we'll try to recover immediately
-    return { hasError: true, error }
+    // Don't change rendering state - just return existing state
+    return null
   }
 
   componentDidCatch(error: Error, errorInfo: React.ErrorInfo) {
     console.error("[ErrorBoundary] Error details:", error, errorInfo)
+
+    // Rate limit error notifications (max 1 per 5 seconds)
+    const now = Date.now()
+    if (now - this.state.lastErrorTime < 5000) {
+      return
+    }
+
+    // Update error tracking
+    this.setState({ errorCount: this.state.errorCount + 1, lastErrorTime: now })
 
     // Show toast notification
     import("sonner").then(({ toast }) => {
@@ -55,37 +65,27 @@ class ErrorBoundary extends React.Component<
         description: errorMessage.length > 100
           ? errorMessage.slice(0, 100) + "..."
           : errorMessage,
-        duration: 5000,
+        duration: 3000,
         action: {
-          label: "Copy Error",
+          label: "Copy",
           onClick: () => {
             const errorDetails = `${error.name}: ${error.message}\n\n${error.stack || ""}\n\nComponent Stack: ${errorInfo.componentStack}`
             navigator.clipboard.writeText(errorDetails)
-            toast.success("Error details copied")
+            toast.success("Copied")
           },
         },
       })
     }).catch(() => {
       console.warn("[ErrorBoundary] Failed to show toast")
     })
-
-    // Try to recover automatically after a short delay
-    // This allows the toast to be seen but doesn't block the app
-    setTimeout(() => {
-      this.setState({ hasError: false, error: undefined })
-    }, 100)
   }
 
   render() {
-    // Always try to render children - if there's a persistent error,
-    // componentDidCatch will show a toast and try to recover
-    // This prevents the "black screen of death" from blocking everything
+    // ALWAYS render children - never block the UI
+    // This prevents the "black screen of death"
     return this.props.children
   }
 }
-
-// Need to import React for the ErrorBoundary
-import React from "react"
 
 /**
  * Custom Toaster that adapts to theme
@@ -106,23 +106,33 @@ function ThemedToaster() {
  * Main content router - decides which page to show based on onboarding state
  */
 function AppContent() {
-  console.log("[AppContent] Rendering AppContent...")
-
   const billingMethod = useAtomValue(billingMethodAtom)
   const setBillingMethod = useSetAtom(billingMethodAtom)
+  const setApiKeyOnboardingCompleted = useSetAtom(apiKeyOnboardingCompletedAtom)
+
+  // FORK: Skip billing method page - always use API key mode
+  useEffect(() => {
+    if (!billingMethod) {
+      console.log("[App] Setting default billing mode to api-key (fork)")
+      setBillingMethod("api-key")
+      setApiKeyOnboardingCompleted(true)
+    }
+    // Only run once on mount - eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
   const anthropicOnboardingCompleted = useAtomValue(
     anthropicOnboardingCompletedAtom
   )
   const setAnthropicOnboardingCompleted = useSetAtom(anthropicOnboardingCompletedAtom)
   const apiKeyOnboardingCompleted = useAtomValue(apiKeyOnboardingCompletedAtom)
-  const setApiKeyOnboardingCompleted = useSetAtom(apiKeyOnboardingCompletedAtom)
   const selectedProject = useAtomValue(selectedProjectAtom)
   const setSelectedChatId = useSetAtom(selectedAgentChatIdAtom)
   const defaultWorktreeBaseLocation = useAtomValue(defaultWorktreeBaseLocationAtom)
   const interviewTimeoutSeconds = useAtomValue(interviewTimeoutSecondsAtom)
   const agentPermissionLocal = useAtomValue(agentPermissionLocalModeAtom)
   const agentPermissionWorktree = useAtomValue(agentPermissionWorktreeModeAtom)
-  const { setActiveSubChat, addToOpenSubChats, setChatId } = useAgentSubChatStore()
+  const setActiveSubChat = useAgentSubChatStore((s) => s.setActiveSubChat)
+  const addToOpenSubChats = useAgentSubChatStore((s) => s.addToOpenSubChats)
+  const setChatId = useAgentSubChatStore((s) => s.setChatId)
 
   // Sync default worktree location and interview timeout to main process on app startup
   const settingsSetMutation = trpc.settings.set.useMutation()
@@ -231,22 +241,6 @@ function AppContent() {
   // 4. No valid project selected -> SelectRepoPage
   // 5. Otherwise -> AgentsLayout
 
-  // Debug logging for routing state
-  console.log("[DEBUG] App routing state:", {
-    billingMethod,
-    anthropicOnboardingCompleted,
-    apiKeyOnboardingCompleted,
-    selectedProject: selectedProject ? { id: selectedProject.id, name: selectedProject.name } : null,
-    validatedProject: validatedProject ? { id: validatedProject.id, name: validatedProject.name } : null,
-    isLoadingProjects,
-    projectsCount: projects?.length,
-    nextPage: !billingMethod ? "BillingMethodPage"
-      : billingMethod === "claude-subscription" && !anthropicOnboardingCompleted ? "AnthropicOnboardingPage"
-      : (billingMethod === "api-key" || billingMethod === "custom-model") && !apiKeyOnboardingCompleted ? "ApiKeyOnboardingPage"
-      : !validatedProject && !isLoadingProjects ? "SelectRepoPage"
-      : "AgentsLayout"
-  })
-
   if (!billingMethod) {
     return <BillingMethodPage />
   }
@@ -270,8 +264,6 @@ function AppContent() {
 }
 
 export function App() {
-  console.log("[App] App component rendering...")
-
   // Initialize analytics and settings on mount
   useEffect(() => {
     console.log("[App] App component mounted, initializing...")

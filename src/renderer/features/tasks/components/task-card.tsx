@@ -1,6 +1,6 @@
 import { useState } from "react"
-import { CheckCircle2, Circle, Ellipsis, Pencil, Trash2, Loader2 } from "lucide-react"
-import { useAtom } from "jotai"
+import { CheckCircle2, Circle, Ellipsis, Pencil, Trash2, Loader2, MessageCircle, GitBranch } from "lucide-react"
+import { useAtom, useSetAtom } from "jotai"
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -11,11 +11,14 @@ import { Button } from "../../../components/ui/button"
 import { Badge } from "../../../components/ui/badge"
 import { cn } from "../../../lib/utils"
 import { trpc } from "../../../lib/trpc"
-import { editingTaskAtom, taskFormDialogOpenAtom } from "../atoms"
+import { editingTaskAtom, taskFormDialogOpenAtom, taskViewVisibleAtom } from "../atoms"
+import { selectedAgentChatIdAtom } from "../../../features/agents/atoms"
+import { toast } from "sonner"
 
 interface TaskCardProps {
   task: {
     id: string
+    projectId: string
     title: string
     description: string | null
     status: string
@@ -23,6 +26,10 @@ interface TaskCardProps {
     createdAt: Date
     updatedAt: Date
     completedAt: Date | null
+    project?: {
+      id: string
+      name: string
+    } | null
   }
 }
 
@@ -44,6 +51,8 @@ export function TaskCard({ task }: TaskCardProps) {
   const utils = trpc.useContext()
   const setEditingTask = useAtom(editingTaskAtom)[1]
   const setDialogOpen = useAtom(taskFormDialogOpenAtom)[1]
+  const setSelectedAgentChatId = useSetAtom(selectedAgentChatIdAtom)
+  const setTaskViewVisible = useSetAtom(taskViewVisibleAtom)
 
   const [isEditing, setIsEditing] = useState(false)
   const [editedTitle, setEditedTitle] = useState(task.title)
@@ -52,6 +61,7 @@ export function TaskCard({ task }: TaskCardProps) {
   const updateTask = trpc.tasks.update.useMutation({
     onSuccess: () => {
       utils.tasks.list.invalidate()
+      utils.tasks.listByProjects.invalidate()
     },
   })
 
@@ -59,6 +69,25 @@ export function TaskCard({ task }: TaskCardProps) {
   const deleteTask = trpc.tasks.delete.useMutation({
     onSuccess: () => {
       utils.tasks.list.invalidate()
+      utils.tasks.listByProjects.invalidate()
+    },
+  })
+
+  // Create chat from task mutation
+  const createChatFromTask = trpc.tasks.createChatFromTask.useMutation({
+    onSuccess: (data) => {
+      console.log("[TaskCard] Chat created successfully:", data.id)
+      utils.tasks.list.invalidate()
+      utils.tasks.listByProjects.invalidate()
+      utils.chats.list.invalidate()
+      // Navigate to the new chat and close task view if open
+      setSelectedAgentChatId(data.id)
+      setTaskViewVisible(false)
+      toast.success("Chat created from task")
+    },
+    onError: (error) => {
+      console.error("[TaskCard] Failed to create chat:", error)
+      toast.error(`Failed to create chat: ${error.message}`)
     },
   })
 
@@ -70,16 +99,6 @@ export function TaskCard({ task }: TaskCardProps) {
     }
     const newStatus = statusFlow[task.status] || "todo"
     updateTask.mutate({ id: task.id, status: newStatus as any })
-  }
-
-  const handleEdit = () => {
-    setEditingTask({
-      id: task.id,
-      title: task.title,
-      description: task.description || "",
-      priority: (task.priority as any) || "medium",
-    })
-    setDialogOpen(true)
   }
 
   const handleDelete = () => {
@@ -104,19 +123,56 @@ export function TaskCard({ task }: TaskCardProps) {
     }
   }
 
-  const isLoading = updateTask.isPending || deleteTask.isPending
+  const isLoading = updateTask.isPending || deleteTask.isPending || createChatFromTask.isPending
+
+  const handleTakeToPlanChat = () => {
+    console.log("[TaskCard] Plan with AI clicked:", task.id)
+    createChatFromTask.mutate({ taskId: task.id, mode: "plan" })
+  }
+
+  const handleStartWorkspace = () => {
+    console.log("[TaskCard] Start Workspace clicked:", task.id)
+    createChatFromTask.mutate({ taskId: task.id, mode: "agent" })
+  }
+
+  const handleCardClick = () => {
+    console.log("[TaskCard] Card clicked!", { taskId: task.id, isEditing })
+    // Don't open edit dialog if title is being edited
+    if (!isEditing) {
+      console.log("[TaskCard] Opening edit dialog...")
+      handleEdit()
+    }
+  }
+
+  const handleEdit = () => {
+    console.log("[TaskCard] handleEdit called", { taskId: task.id, projectId: task.projectId })
+    setEditingTask({
+      id: task.id,
+      projectId: task.projectId,
+      title: task.title,
+      description: task.description || "",
+      priority: (task.priority as any) || "medium",
+    })
+    console.log("[TaskCard] Editing task set, opening dialog...")
+    setDialogOpen(true)
+    console.log("[TaskCard] Dialog should be open now")
+  }
 
   return (
     <div
+      onClick={handleCardClick}
       className={cn(
-        "group flex items-start gap-2 p-3 rounded-lg border bg-card hover:bg-accent/50 transition-colors",
+        "group flex items-start gap-2 p-3 rounded-lg border bg-card hover:bg-accent/50 transition-colors cursor-pointer",
         isLoading && "opacity-50 pointer-events-none",
         task.status === "done" && "opacity-60",
       )}
     >
       {/* Status indicator - clickable to cycle through statuses */}
       <button
-        onClick={handleStatusToggle}
+        onClick={(e) => {
+          e.stopPropagation()
+          handleStatusToggle()
+        }}
         className="mt-0.5 flex-shrink-0 text-muted-foreground hover:text-foreground transition-colors"
         disabled={isLoading}
       >
@@ -174,6 +230,13 @@ export function TaskCard({ task }: TaskCardProps) {
           >
             {task.priority}
           </span>
+
+          {/* Project name */}
+          {task.project && (
+            <span className="text-xs text-muted-foreground truncate max-w-[120px]" title={task.project.name}>
+              {task.project.name}
+            </span>
+          )}
         </div>
       </div>
 
@@ -183,6 +246,7 @@ export function TaskCard({ task }: TaskCardProps) {
           <Button
             variant="ghost"
             size="icon"
+            onClick={(e) => e.stopPropagation()}
             className="h-7 w-7 opacity-0 group-hover:opacity-100 transition-opacity"
           >
             {isLoading ? (
@@ -193,6 +257,14 @@ export function TaskCard({ task }: TaskCardProps) {
           </Button>
         </DropdownMenuTrigger>
         <DropdownMenuContent align="end">
+          <DropdownMenuItem onClick={handleTakeToPlanChat} disabled={createChatFromTask.isPending}>
+            <MessageCircle className="h-4 w-4 mr-2" />
+            Plan with AI
+          </DropdownMenuItem>
+          <DropdownMenuItem onClick={handleStartWorkspace} disabled={createChatFromTask.isPending}>
+            <GitBranch className="h-4 w-4 mr-2" />
+            Start Workspace
+          </DropdownMenuItem>
           <DropdownMenuItem onClick={handleEdit}>
             <Pencil className="h-4 w-4 mr-2" />
             Edit

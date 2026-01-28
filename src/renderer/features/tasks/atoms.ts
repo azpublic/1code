@@ -41,6 +41,7 @@ export const taskFormDialogOpenAtom = atom<boolean>(false)
 // Task being edited (null = creating new task)
 export const editingTaskAtom = atom<{
   id: string | null
+  projectId: string | null
   title: string
   description: string
   priority: TaskPriority

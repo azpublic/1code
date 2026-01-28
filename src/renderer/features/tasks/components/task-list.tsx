@@ -1,4 +1,5 @@
 import { useAtomValue } from "jotai"
+import { useMemo } from "react"
 import { taskFilterAtom, taskSortOrderAtom } from "../atoms"
 import { trpc } from "../../../lib/trpc"
 import { TaskCard } from "./task-card"
@@ -29,6 +30,12 @@ export function TaskList({ projectId }: TaskListProps) {
   const filter = useAtomValue(taskFilterAtom)
   const sortOrder = useAtomValue(taskSortOrderAtom)
 
+  // Fetch project info for enrichment
+  const { data: project } = trpc.projects.get.useQuery(
+    { id: projectId ?? "" },
+    { enabled: !!projectId }
+  )
+
   const { data: tasks, isLoading } = trpc.tasks.list.useQuery(
     {
       projectId,
@@ -39,9 +46,17 @@ export function TaskList({ projectId }: TaskListProps) {
     }
   )
 
-  // Sort tasks client-side
-  const sortedTasks = tasks
-    ? [...tasks].sort(sortFunctions[sortOrder])
+  // Enrich tasks with project data and sort client-side
+  const enrichedTasks = useMemo(() => {
+    if (!tasks) return []
+    return tasks.map((task) => ({
+      ...task,
+      project: project ? { id: project.id, name: project.name } : null,
+    }))
+  }, [tasks, project])
+
+  const sortedTasks = enrichedTasks
+    ? [...enrichedTasks].sort(sortFunctions[sortOrder])
     : []
 
   if (isLoading) {

@@ -1,7 +1,8 @@
 import { z } from "zod"
 import { router, publicProcedure } from "../index"
 import { getDatabase, tasks } from "../../db"
-import { eq, and, desc, asc, inArray } from "drizzle-orm"
+import { eq, and, desc, asc, inArray, sql } from "drizzle-orm"
+import { createChatFromTaskInternal } from "./chats"
 
 /**
  * tRPC router for task management
@@ -106,6 +107,17 @@ export const tasksRouter = router({
     }),
 
   /**
+   * Get a task by chat ID
+   * Used to find the task associated with a chat
+   */
+  getByChatId: publicProcedure
+    .input(z.object({ chatId: z.string() }))
+    .query(({ input }) => {
+      const db = getDatabase()
+      return db.select().from(tasks).where(eq(tasks.chatId, input.chatId)).get()
+    }),
+
+  /**
    * Create a new task
    */
   create: publicProcedure
@@ -138,6 +150,7 @@ export const tasksRouter = router({
     .input(
       z.object({
         id: z.string(),
+        projectId: z.string().optional(),
         title: z.string().min(1).optional(),
         description: z.string().optional(),
         status: z.enum(["todo", "in-progress", "done"]).optional(),
@@ -180,5 +193,85 @@ export const tasksRouter = router({
         .where(eq(tasks.id, input.id))
         .returning()
         .get()
+    }),
+
+  /**
+   * Create a chat from a task
+   * Creates a new chat with the task context as the initial message
+   */
+  createChatFromTask: publicProcedure
+    .input(
+      z.object({
+        taskId: z.string(),
+        mode: z.enum(["plan", "agent"]).default("plan"),
+      })
+    )
+    .mutation(async ({ input }) => {
+      const db = getDatabase()
+      const task = db.select().from(tasks).where(eq(tasks.id, input.taskId)).get()
+      if (!task) {
+        throw new Error("Task not found")
+      }
+
+      console.log("[createChatFromTask] Creating chat from task:", task.id, task.title)
+
+      // Create chat with task context
+      const chat = await createChatFromTaskInternal(
+        db,
+        task,
+        input.mode,
+      )
+
+      console.log("[createChatFromTask] Chat created:", chat.id, "Linking to task:", input.taskId)
+
+      // Link task to chat
+      db.update(tasks)
+        .set({ chatId: chat.id, status: "in-progress" })
+        .where(eq(tasks.id, input.taskId))
+        .run()
+
+      console.log("[createChatFromTask] Task linked successfully")
+      return chat
+    }),
+
+  /**
+   * Attach a plan to a task
+   * Appends plan content to task description and stores planPath
+   */
+  attachPlanToTask: publicProcedure
+    .input(
+      z.object({
+        taskId: z.string(),
+        planPath: z.string(),
+        planContent: z.string(), // Markdown content
+      })
+    )
+    .mutation(async ({ input }) => {
+      const db = getDatabase()
+
+      // Get current task
+      const task = db.select().from(tasks).where(eq(tasks.id, input.taskId)).get()
+      if (!task) {
+        throw new Error("Task not found")
+      }
+
+      // Append plan to description
+      const updatedDescription = task.description
+        ? `${task.description}\n\n## Plan\n${input.planContent}`
+        : `## Plan\n${input.planContent}`
+
+      // Update task
+      const updated = db
+        .update(tasks)
+        .set({
+          planPath: input.planPath,
+          description: updatedDescription,
+          updatedAt: new Date(),
+        })
+        .where(eq(tasks.id, input.taskId))
+        .returning()
+        .get()
+
+      return updated
     }),
 })

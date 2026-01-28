@@ -137,11 +137,17 @@ export function useUpdateChecker() {
     const api = window.desktopApi
     if (!api) return
 
-    // Set initial value on mount
-    api.setAutoUpdateCheckEnabled?.(autoUpdateCheckEnabled)
+    // Set initial value on mount (only in production, handler not available in dev)
+    if (import.meta.env.PROD) {
+      api.setAutoUpdateCheckEnabled?.(autoUpdateCheckEnabled).catch((err) => {
+        console.warn("[Update] Failed to set auto-update check enabled:", err)
+      })
+    }
 
-    // Update when setting changes
-    console.log("[Update] Auto-update check", autoUpdateCheckEnabled ? "enabled" : "disabled")
+    // Update when setting changes (only log in production)
+    if (import.meta.env.PROD) {
+      console.log("[Update] Auto-update check", autoUpdateCheckEnabled ? "enabled" : "disabled")
+    }
   }, [autoUpdateCheckEnabled])
 
   // Actions

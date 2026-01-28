@@ -1,8 +1,20 @@
-import { memo, useMemo } from "react"
-import { Circle, CircleDot, CheckCircle2 } from "lucide-react"
+import { memo, useMemo, useCallback, useState } from "react"
+import { Circle, CircleDot, CheckCircle2, Ellipsis, MessageCircle, GitBranch, Loader2 } from "lucide-react"
 import { cn } from "@/lib/utils"
+import { useSetAtom } from "jotai"
 import type { TaskStatus } from "../atoms"
+import { editingTaskAtom, taskFormDialogOpenAtom, taskViewVisibleAtom } from "../atoms"
 import type { Project } from "db/schema"
+import { trpc } from "../../../lib/trpc"
+import { selectedAgentChatIdAtom } from "../../agents/atoms"
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "../../../components/ui/dropdown-menu"
+import { Button } from "../../../components/ui/button"
+import { toast } from "sonner"
 
 interface TaskWithProject {
   id: string
@@ -86,8 +98,59 @@ const ProjectBadge = memo(function ProjectBadge({ project }: { project: Project 
 
 // Task row component
 const TaskRow = memo(function TaskRow({ task }: { task: TaskWithProject }) {
+  const setEditingTask = useSetAtom(editingTaskAtom)
+  const setDialogOpen = useSetAtom(taskFormDialogOpenAtom)
+  const setSelectedAgentChatId = useSetAtom(selectedAgentChatIdAtom)
+  const setTaskViewVisible = useSetAtom(taskViewVisibleAtom)
+  const utils = trpc.useContext()
+  const [isMenuOpen, setIsMenuOpen] = useState(false)
+
+  // Create chat from task mutation
+  const createChatFromTask = trpc.tasks.createChatFromTask.useMutation({
+    onSuccess: (data) => {
+      console.log("[TaskRow] Chat created successfully:", data.id)
+      utils.tasks.list.invalidate()
+      utils.tasks.listByProjects.invalidate()
+      utils.chats.list.invalidate()
+      // Navigate to the new chat and close task view
+      setSelectedAgentChatId(data.id)
+      setTaskViewVisible(false)
+      setIsMenuOpen(false)
+      toast.success("Chat created from task")
+    },
+    onError: (error) => {
+      console.error("[TaskRow] Failed to create chat:", error)
+      toast.error(`Failed to create chat: ${error.message}`)
+      setIsMenuOpen(false)
+    },
+  })
+
+  const handleEdit = useCallback(() => {
+    setEditingTask({
+      id: task.id,
+      projectId: task.projectId,
+      title: task.title,
+      description: task.description || "",
+      priority: task.priority,
+    })
+    setDialogOpen(true)
+    setIsMenuOpen(false)
+  }, [task, setEditingTask, setDialogOpen])
+
+  const handleTakeToPlanChat = useCallback(() => {
+    console.log("[TaskRow] Plan with AI clicked:", task.id)
+    createChatFromTask.mutate({ taskId: task.id, mode: "plan" })
+  }, [task.id, createChatFromTask])
+
+  const handleStartWorkspace = useCallback(() => {
+    console.log("[TaskRow] Start Workspace clicked:", task.id)
+    createChatFromTask.mutate({ taskId: task.id, mode: "agent" })
+  }, [task.id, createChatFromTask])
+
+  const isLoading = createChatFromTask.isPending
+
   return (
-    <tr className="group border-b border-border/50 hover:bg-muted/30 transition-colors cursor-pointer">
+    <tr className="group border-b border-border/50 hover:bg-muted/30 transition-colors">
       {/* Status */}
       <td className="px-4 py-3">
         <StatusIcon status={task.status} />
@@ -95,15 +158,51 @@ const TaskRow = memo(function TaskRow({ task }: { task: TaskWithProject }) {
 
       {/* Title */}
       <td className="px-4 py-3">
-        <div className="flex flex-col">
-          <span className="text-sm font-medium text-foreground">
-            {task.title}
-          </span>
-          {task.description && (
-            <span className="text-xs text-muted-foreground line-clamp-1">
-              {task.description}
+        <div className="flex items-center gap-2">
+          <div
+            onClick={handleEdit}
+            className="flex flex-col flex-1 cursor-pointer hover:text-primary/80 transition-colors"
+          >
+            <span className="text-sm font-medium text-foreground">
+              {task.title}
             </span>
-          )}
+            {task.description && (
+              <span className="text-xs text-muted-foreground line-clamp-1">
+                {task.description}
+              </span>
+            )}
+          </div>
+
+          {/* Menu button */}
+          <DropdownMenu onOpenChange={setIsMenuOpen} open={isMenuOpen}>
+            <DropdownMenuTrigger asChild onClick={(e) => e.stopPropagation()}>
+              <Button
+                variant="ghost"
+                size="icon"
+                className="h-6 w-6 opacity-0 group-hover:opacity-100 transition-opacity flex-shrink-0"
+              >
+                {isLoading ? (
+                  <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                ) : (
+                  <Ellipsis className="h-3.5 w-3.5" />
+                )}
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end" onClick={(e) => e.stopPropagation()}>
+              <DropdownMenuItem onClick={handleTakeToPlanChat} disabled={isLoading}>
+                <MessageCircle className="h-3.5 w-3.5 mr-2" />
+                Plan with AI
+              </DropdownMenuItem>
+              <DropdownMenuItem onClick={handleStartWorkspace} disabled={isLoading}>
+                <GitBranch className="h-3.5 w-3.5 mr-2" />
+                Start Workspace
+              </DropdownMenuItem>
+              <DropdownMenuItem onClick={handleEdit}>
+                <Ellipsis className="h-3.5 w-3.5 mr-2" />
+                Edit
+              </DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
         </div>
       </td>
 

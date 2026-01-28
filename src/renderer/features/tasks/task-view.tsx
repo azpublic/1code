@@ -10,6 +10,7 @@ import {
 } from "./atoms"
 import { TaskViewHeader } from "./components/task-view-header"
 import { TaskKanbanBoard } from "./components/task-kanban-board"
+import { TaskForm } from "./components/task-form"
 import { TaskListView } from "./components/task-list-view"
 import { selectedProjectAtom } from "../agents/atoms"
 import type { Project } from "db/schema"
@@ -77,21 +78,27 @@ export function TaskView() {
 
   // Handle create task
   const handleCreateTask = useCallback(() => {
+    console.log("[TaskView] New Task button clicked!", { viewFocus, selectedProject })
+
     // Determine which project to create task for
     const projectId = viewFocus !== "all" ? viewFocus : selectedProject?.id
 
     if (!projectId) {
+      console.warn("[TaskView] No project selected, cannot create task")
       // Show error - no project selected
       return
     }
 
+    console.log("[TaskView] Creating task for project:", projectId)
     setEditingTask({
       id: null,
+      projectId: null, // Will be set by form's propProjectId
       title: "",
       description: "",
       priority: "medium",
     })
     setTaskFormDialogOpen(true)
+    console.log("[TaskView] Dialog should be open now")
   }, [viewFocus, selectedProject, setEditingTask, setTaskFormDialogOpen])
 
   // Handle close task view (return to chat)
@@ -99,10 +106,17 @@ export function TaskView() {
     setTaskViewVisible(false)
   }, [setTaskViewVisible])
 
+  // Determine which project to create task for (defaults to viewFocus or selected project)
+  const formProjectId = viewFocus !== "all" ? viewFocus : selectedProject?.id
+
   return (
-    <div className="flex flex-col h-full w-full bg-background">
-      {/* Header */}
-      <TaskViewHeader
+    <>
+      {/* Task Form Dialog - always rendered so it can be opened */}
+      <TaskForm projectId={formProjectId} />
+
+      <div className="flex flex-col h-full w-full bg-background">
+        {/* Header */}
+        <TaskViewHeader
         viewMode={viewMode}
         onViewModeChange={setViewMode}
         viewFocus={viewFocus}
@@ -129,5 +143,6 @@ export function TaskView() {
         )}
       </div>
     </div>
+    </>
   )
 }

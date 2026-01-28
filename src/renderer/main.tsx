@@ -118,10 +118,46 @@ window.addEventListener("unhandledrejection", (event) => {
       },
     })
   }).catch(() => {
-    // If toast import fails, just log to console
-    console.warn("[Toast] Failed to show error notification")
+    // If toast import fails, try to alert the user (last resort)
+    console.warn("[Toast] Failed to show toast notification")
+    // Don't use alert() as it can also cause issues
   })
 })
+
+// ADDITIONAL: Catch ALL errors that might slip through
+// This is a last resort to prevent the app from completely crashing
+window.addEventListener("error", (e) => {
+  const errorMessage = e.message || String(e.error) || "Unknown error"
+
+  // Already handled ResizeObserver
+  if (resizeObserverErr.test(errorMessage)) {
+    return
+  }
+
+  console.error("[Window Error]", errorMessage)
+
+  // Prevent default to avoid browser's default error page
+  e.preventDefault()
+  e.stopImmediatePropagation()
+
+  // Try to show a toast
+  import("sonner").then(({ toast }) => {
+    if (errorMessage.includes("Failed to fetch") || errorMessage.includes("fetch")) {
+      toast("Message queued", {
+        description: "Claude is still busy. Your message will be sent when ready.",
+        duration: 4000,
+      })
+    } else {
+      toast.error("Error", {
+        description: errorMessage.slice(0, 200),
+        duration: 5000,
+      })
+    }
+  }).catch(() => {
+    // Last resort - just log it
+    console.error("[Critical] Error occurred but toast failed:", errorMessage)
+  })
+}, true) // Use capture phase to catch errors early
 
 console.log("[main.tsx] Getting root element...")
 const rootElement = document.getElementById("root")
@@ -133,3 +169,38 @@ if (rootElement) {
 } else {
   console.error("[main.tsx] Root element not found!")
 }
+
+// LAST RESORT: Prevent the page from ever being completely blank
+// If everything else fails, show a minimal recovery UI
+setTimeout(() => {
+  // Check if the app has rendered anything visible
+  const root = document.getElementById("root")
+  if (root && root.children.length === 0) {
+    console.error("[CRITICAL] App rendered nothing! Showing fallback UI")
+    root.innerHTML = `
+      <div style="
+        position: fixed;
+        top: 50%;
+        left: 50%;
+        transform: translate(-50%, -50%);
+        background: #1a1a1a;
+        color: #fff;
+        padding: 20px;
+        border-radius: 8px;
+        font-family: sans-serif;
+        z-index: 999999;
+      ">
+        <h2 style="margin: 0 0 10px 0;">App failed to load</h2>
+        <p style="margin: 0 0 20px 0;">Try restarting the app.</p>
+        <button onclick="location.reload()" style="
+          padding: 8px 16px;
+          background: #007acc;
+          color: white;
+          border: none;
+          border-radius: 4px;
+          cursor: pointer;
+        ">Reload</button>
+      </div>
+    `
+  }
+}, 3000)

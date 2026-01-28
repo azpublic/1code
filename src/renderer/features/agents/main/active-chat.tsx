@@ -2330,11 +2330,7 @@ const ChatViewInner = memo(function ChatViewInner({
     // Mark as manually aborted to prevent completion sound
     agentChatStore.setManuallyAborted(subChatId, true)
     await stopRef.current()
-    // Call DELETE endpoint to cancel server-side stream
-    await fetch(
-      `/api/agents/chat?id=${encodeURIComponent(subChatId)}`,
-      { method: "DELETE", credentials: "include" },
-    )
+    // Note: Desktop app uses IPC for stop, no DELETE endpoint needed
   }, [subChatId])
 
   // Wrapper for addTextContext that handles TextSelectionSource

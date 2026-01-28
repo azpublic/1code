@@ -2,7 +2,7 @@
 
 import { useSetAtom } from "jotai"
 import { useState } from "react"
-import { Bug } from "lucide-react"
+import { Bug, Check } from "lucide-react"
 
 import { ClaudeCodeIcon, KeyFilledIcon, SettingsFilledIcon } from "../../components/ui/icons"
 import { billingMethodAtom, type BillingMethod } from "../../lib/atoms"

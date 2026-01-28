@@ -16,7 +16,8 @@ import {
   subChatModeAtomFamily,
   pendingBuildPlanSubChatIdAtom,
 } from "../atoms"
-import { useAgentSubChatStore } from "../stores/sub-chat-store"
+import { trpc } from "../../../lib/trpc"
+import { toast } from "sonner"
 
 interface AgentPlanFileToolProps {
   part: {
@@ -51,6 +52,32 @@ export const AgentPlanFileTool = memo(function AgentPlanFileTool({
   const subChatModeAtom = useMemo(() => subChatModeAtomFamily(subChatId), [subChatId])
   const subChatMode = useAtomValue(subChatModeAtom)
   const setPendingBuildPlanSubChatId = useSetAtom(pendingBuildPlanSubChatIdAtom)
+
+  // Get sub-chat data (including parent chatId) via tRPC
+  const { data: subChatData } = trpc.chats.getSubChat.useQuery(
+    { id: subChatId },
+    { enabled: !!subChatId }
+  )
+
+  // Get parent chat ID from sub-chat data
+  const parentChatId = subChatData?.chatId
+
+  // Get task linked to this chat (if any)
+  const { data: linkedTask } = trpc.tasks.getByChatId.useQuery(
+    { chatId: parentChatId ?? "" },
+    { enabled: !!parentChatId && !!part.input?.file_path }
+  )
+
+  // Attach plan to task mutation
+  const attachPlanToTask = trpc.tasks.attachPlanToTask.useMutation({
+    onSuccess: () => {
+      toast.success("Plan saved to task")
+    },
+    onError: (error) => {
+      console.error("[AgentPlanFileTool] Failed to save plan:", error)
+      toast.error(`Failed to save plan: ${error.message}`)
+    },
+  })
 
   // Refs for scroll gradients (avoid re-renders)
   const contentRef = useRef<HTMLDivElement>(null)
@@ -152,6 +179,27 @@ export const AgentPlanFileTool = memo(function AgentPlanFileTool({
     }
   }, [setPendingBuildPlanSubChatId])
 
+  // Handle save plan to task
+  const handleSavePlanToTask = useCallback(() => {
+    if (!linkedTask) return
+
+    const planContent = isWrite
+      ? (part.input?.content || "")
+      : (part.input?.new_string || "")
+    const planPath = part.input?.file_path || ""
+
+    if (!planContent || !planPath) {
+      toast.error("No plan content to save")
+      return
+    }
+
+    attachPlanToTask.mutate({
+      taskId: linkedTask.id,
+      planPath,
+      planContent,
+    })
+  }, [linkedTask, isWrite, part.input, attachPlanToTask])
+
   // If no content yet, show minimal view with shimmer (no icon during shimmer)
   if (!hasVisibleContent) {
     return (
@@ -250,16 +298,36 @@ export const AgentPlanFileTool = memo(function AgentPlanFileTool({
       </div>
 
       {/* Footer - action buttons */}
-      <div className="flex items-center justify-between p-1.5">
-        <Button
-          variant="ghost"
-          size="sm"
-          onClick={handleOpenSidebar}
-          disabled={!viewPlanEnabled}
-          className="h-6 px-2 text-xs text-muted-foreground hover:text-foreground disabled:opacity-50"
-        >
-          View plan
-        </Button>
+      <div className="flex items-center justify-between gap-2 p-1.5">
+        <div className="flex items-center gap-1">
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={handleOpenSidebar}
+            disabled={!viewPlanEnabled}
+            className="h-6 px-2 text-xs text-muted-foreground hover:text-foreground disabled:opacity-50"
+          >
+            View plan
+          </Button>
+
+          {/* Save Plan to Task button - only show if there's a linked task */}
+          {linkedTask && viewPlanEnabled && (
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={handleSavePlanToTask}
+              disabled={attachPlanToTask.isPending}
+              className="h-6 px-2 text-xs text-muted-foreground hover:text-foreground disabled:opacity-50"
+              title="Save this plan to the linked task"
+            >
+              {attachPlanToTask.isPending ? (
+                <>Saving...</>
+              ) : (
+                <>✓ Save to task</>
+              )}
+            </Button>
+          )}
+        </div>
 
         {subChatMode === "plan" && (
           <Button

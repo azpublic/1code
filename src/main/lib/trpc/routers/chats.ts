@@ -36,6 +36,136 @@ function getFallbackName(userMessage: string): string {
 }
 
 /**
+ * Create a chat from a task
+ * Used by tasks.createChatFromTask mutation
+ * @param db - Database instance
+ * @param task - Task object with id, projectId, title, description
+ * @param mode - "plan" or "agent"
+ * @returns Created chat with sub-chat
+ */
+export async function createChatFromTaskInternal(
+  db: any,
+  task: { id: string; projectId: string; title: string; description: string | null },
+  mode: "plan" | "agent"
+) {
+  // Build elaborate initial message from task
+  let initialMessage = `# Task: ${task.title}\n\n`
+
+  if (task.description) {
+    initialMessage += `## Description\n${task.description}\n\n`
+  }
+
+  if (mode === "plan") {
+    initialMessage += `## Mode: Planning\n\nI'm working on this task and need your help to create a detailed plan. Please:\n\n1. **Analyze** the task requirements and break down what needs to be done\n2. **Identify** key files, components, or areas of the codebase that need attention\n3. **Propose** a step-by-step implementation approach\n4. **Highlight** any potential risks, dependencies, or edge cases\n5. **Create** a structured plan that can be followed during implementation\n\nWhen ready, please create a plan file (using the plan tool) with the detailed implementation steps.\n\nLet's start!`
+  } else {
+    initialMessage += `## Mode: Execution\n\nI'm ready to execute this task. I have a dedicated workspace to work in.\n\nPlease:\n1. **Review** the task requirements\n2. **Suggest** a starting approach if you see a better way\n3. **Begin** implementation when you're ready\n4. **Test** your changes as you go\n5. **Commit** your work when complete\n\nLet's get started!`
+  }
+
+  // Create chat
+  const chat = db
+    .insert(chats)
+    .values({
+      name: task.title,
+      projectId: task.projectId,
+    })
+    .returning()
+    .get()
+
+  // Create sub-chat with initial message
+  const subChat = db
+    .insert(subChats)
+    .values({
+      chatId: chat.id,
+      mode,
+      messages: JSON.stringify([
+        {
+          id: `msg-${Date.now()}`,
+          role: "user",
+          parts: [{ type: "text", text: initialMessage }],
+        },
+      ]),
+    })
+    .returning()
+    .get()
+
+  // Get project for worktree creation
+  const project = db
+    .select()
+    .from(projects)
+    .where(eq(projects.id, task.projectId))
+    .get()
+
+  if (!project) {
+    throw new Error("Project not found")
+  }
+
+  // Create worktree for agent mode (plan mode skips worktree initially)
+  let worktreeResult: {
+    worktreePath?: string
+    branch?: string
+    baseBranch?: string
+  } = {}
+
+  if (mode === "agent") {
+    const result = await createWorktreeForChat(
+      project.path,
+      sanitizeProjectName(project.name),
+      chat.id,
+      null, // baseBranch
+      "local", // branchType
+      task.projectId,
+    )
+
+    if (result.success && result.worktreePath) {
+      db.update(chats)
+        .set({
+          worktreePath: result.worktreePath,
+          branch: result.branch,
+          baseBranch: result.baseBranch,
+        })
+        .where(eq(chats.id, chat.id))
+        .run()
+      worktreeResult = {
+        worktreePath: result.worktreePath,
+        branch: result.branch,
+        baseBranch: result.baseBranch,
+      }
+    } else {
+      console.warn(`[createChatFromTask] Worktree failed: ${result.error}`)
+      // Fallback to project path
+      db.update(chats)
+        .set({ worktreePath: project.path })
+        .where(eq(chats.id, chat.id))
+        .run()
+      worktreeResult = { worktreePath: project.path }
+    }
+  } else {
+    // Plan mode: use project path directly, no worktree initially
+    db.update(chats)
+      .set({ worktreePath: project.path })
+      .where(eq(chats.id, chat.id))
+      .run()
+    worktreeResult = { worktreePath: project.path }
+  }
+
+  // Track workspace created
+  trackWorkspaceCreated({
+    id: chat.id,
+    projectId: task.projectId,
+    useWorktree: mode === "agent",
+  })
+
+  return {
+    ...chat,
+    worktreePath: worktreeResult.worktreePath || project.path,
+    branch: worktreeResult.branch,
+    baseBranch: worktreeResult.baseBranch,
+    subChats: [subChat],
+    project,
+  }
+}
+
+/**
  * Generate text using local Ollama model
  * Used for chat title generation in offline mode
  * @param userMessage - The user message to generate a title for
