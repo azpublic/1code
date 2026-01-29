@@ -16,7 +16,7 @@ import {
   taskViewVisibleAtom,
 } from "../../lib/atoms"
 import { tasksSidebarOpenAtom, tasksSidebarWidthAtom } from "../tasks/atoms"
-import { selectedAgentChatIdAtom, selectedProjectAtom, selectedDraftIdAtom, showNewChatFormAtom } from "../agents/atoms"
+import { selectedAgentChatIdAtom, selectedProjectAtom, selectedDraftIdAtom, showNewChatFormAtom, desktopViewAtom  } from "../agents/atoms"
 import { trpc } from "../../lib/trpc"
 import { useAgentsHotkeys } from "../agents/lib/agents-hotkeys-manager"
 import { toggleSearchAtom } from "../agents/search"
@@ -99,6 +99,7 @@ export function AgentsLayout() {
   const setShowNewChatForm = useSetAtom(showNewChatFormAtom)
   const setTaskViewVisible = useSetAtom(taskViewVisibleAtom)
   const betaKanbanEnabled = useAtomValue(betaKanbanEnabledAtom)
+  const setDesktopView = useSetAtom(desktopViewAtom)
   const setAnthropicOnboardingCompleted = useSetAtom(
     anthropicOnboardingCompletedAtom
   )
@@ -227,6 +228,7 @@ export function AgentsLayout() {
     setSelectedChatId,
     setSelectedDraftId,
     setShowNewChatForm,
+    setDesktopView,
     setSidebarOpen,
     setSettingsDialogOpen: setSettingsOpen,
     setSettingsActiveTab,

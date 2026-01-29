@@ -479,6 +479,7 @@ export const claudeRouter = router({
         images: z.array(imageAttachmentSchema).optional(), // Image attachments
         historyEnabled: z.boolean().optional(),
         offlineModeEnabled: z.boolean().optional(), // Whether offline mode (Ollama) is enabled in settings
+        enableTasks: z.boolean().optional(), // Enable task management tools (TodoWrite, Task agents)
       }),
     )
     .subscription(({ input }) => {

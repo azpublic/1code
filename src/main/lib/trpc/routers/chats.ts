@@ -414,6 +414,7 @@ export const chatsRouter = router({
         useWorktree: z.boolean().default(true), // If false, work directly in project dir
         mode: z.enum(["plan", "agent"]).default("agent"),
         modelProviderId: z.string().nullish(), // Model provider to use for this chat (null = use active profile)
+        modelId: z.string().nullish(), // Selected model ID (e.g., "opus", "sonnet", "haiku", or custom model string)
       }),
     )
     .mutation(async ({ input }) => {
@@ -456,6 +457,7 @@ export const chatsRouter = router({
           name: input.name,
           projectId: input.projectId,
           modelProviderId: input.modelProviderId,
+          modelId: input.modelId,
         })
         .returning()
         .get()
@@ -588,6 +590,39 @@ export const chatsRouter = router({
         .where(eq(chats.id, input.id))
         .returning()
         .get()
+    }),
+
+  /**
+   * Update a chat's model configuration
+   * Allows changing modelProviderId and modelId for an existing chat
+   */
+  update: publicProcedure
+    .input(
+      z.object({
+        chatId: z.string(),
+        modelProviderId: z.string().nullish().optional(),
+        modelId: z.string().nullish().optional(),
+      }),
+    )
+    .mutation(async ({ input }) => {
+      const db = getDatabase()
+      const updateData: Record<string, any> = { updatedAt: new Date() }
+
+      if (input.modelProviderId !== undefined) {
+        updateData.modelProviderId = input.modelProviderId
+      }
+      if (input.modelId !== undefined) {
+        updateData.modelId = input.modelId
+      }
+
+      const updated = await db
+        .update(chats)
+        .set(updateData)
+        .where(eq(chats.id, input.chatId))
+        .returning()
+        .get()
+
+      return updated
     }),
 
   /**
@@ -1416,8 +1451,11 @@ Commit message:`
       hasToken: z.boolean().optional(),
     }))
     .mutation(async ({ input }) => {
+
+      let inputCpy = { ...input };
+      inputCpy.token = inputCpy.token?inputCpy.token.slice(0, 6):"[no token :( ]";
       console.log("[generateSubChatName] chats.ts generateSubChatName mutation ===== RAW INPUT =====")
-      console.log("[generateSubChatName] Full input object:", JSON.stringify(input, null, 2))
+      console.log("[generateSubChatName] Full input object:", JSON.stringify( input, null, 2))
       console.log("[generateSubChatName] ===== APP TASK AI CONFIG =====")
       console.log("[generateSubChatName] apiFormat:", input.apiFormat || "not set")
       console.log("[generateSubChatName] model:", input.model || "not set")

@@ -29,9 +29,12 @@ import {
 } from "../../../components/ui/prompt-input"
 import { Switch } from "../../../components/ui/switch"
 import {
+  activeProfileIdAtom,
   autoOfflineModeAtom,
   customClaudeConfigAtom,
   extendedThinkingEnabledAtom,
+  getModelDisplayName,
+  modelProfilesAtom,
   normalizeCustomClaudeConfig,
   selectedOllamaModelAtom,
   showOfflineModeFeaturesAtom
@@ -73,14 +76,45 @@ import { getResolvedHotkey } from "../../../lib/hotkeys"
 import { customHotkeysAtom } from "../../../lib/atoms"
 
 // Hook to get available models (including offline models if Ollama is available and debug enabled)
-function useAvailableModels() {
+function useAvailableModels(chatProviderId: string | null) {
   const showOfflineFeatures = useAtomValue(showOfflineModeFeaturesAtom)
   const { data: ollamaStatus } = trpc.ollama.getStatus.useQuery(undefined, {
     refetchInterval: showOfflineFeatures ? 30000 : false,
     enabled: showOfflineFeatures, // Only query Ollama when offline mode is enabled
   })
 
-  const baseModels = CLAUDE_MODELS
+  // Get active profile to use custom model names
+  const activeProfileId = useAtomValue(activeProfileIdAtom)
+  const modelProfiles = useAtomValue(modelProfilesAtom)
+
+  // Use chat provider if available, otherwise fall back to active profile
+  const profileId = chatProviderId || activeProfileId
+  const profile = profileId
+    ? modelProfiles.find(p => p.id === profileId)
+    : null
+
+  // Get models with custom names from profile if available
+  const getModels = () => {
+    if (profile?.apiFormat === "anthropic") {
+      // Anthropic-style: show haiku/sonnet/opus with custom display names
+      return CLAUDE_MODELS.map(model => {
+        const customDisplayName = getModelDisplayName(profile.config, model.id as "opus" | "sonnet" | "haiku")
+        return {
+          ...model,
+          name: customDisplayName,
+        }
+      })
+    } else if (profile?.apiFormat === "openai" && profile.config.model) {
+      // OpenAI-style: show the single model from config
+      return [{
+        id: profile.config.model,
+        name: profile.config.model,
+      }]
+    }
+    return CLAUDE_MODELS
+  }
+
+  const baseModels = getModels()
 
   const isOffline = ollamaStatus ? !ollamaStatus.internet.online : false
   const hasOllama = ollamaStatus?.ollama.available && (ollamaStatus.ollama.models?.length ?? 0) > 0
@@ -163,6 +197,10 @@ export interface ChatInputAreaProps {
   onInputContentChange?: (hasContent: boolean) => void
   // Callback to send message with question answer (Enter sends immediately, not to queue)
   onSubmitWithQuestionAnswer?: () => void
+  // Callback when user changes the model in the inline selector
+  onModelChange?: (modelId: string) => void
+  // Model provider ID for this chat (to determine available models)
+  modelProviderId?: string | null
   // Model provider display name (computed from current chat's model provider)
   modelProviderDisplay?: string
 }
@@ -212,7 +250,9 @@ function arePropsEqual(prevProps: ChatInputAreaProps, nextProps: ChatInputAreaPr
     prevProps.onRemovePastedText !== nextProps.onRemovePastedText ||
     prevProps.onCacheFileContent !== nextProps.onCacheFileContent ||
     prevProps.onInputContentChange !== nextProps.onInputContentChange ||
-    prevProps.onSubmitWithQuestionAnswer !== nextProps.onSubmitWithQuestionAnswer
+    prevProps.onSubmitWithQuestionAnswer !== nextProps.onSubmitWithQuestionAnswer ||
+    prevProps.onModelChange !== nextProps.onModelChange ||
+    prevProps.modelProviderId !== nextProps.modelProviderId
   ) {
     return false
   }
@@ -349,6 +389,8 @@ export const ChatInputArea = memo(function ChatInputArea({
   parentChatId,
   teamId,
   repository,
+  modelProviderId = null,
+  modelProviderDisplay,
   sandboxId,
   projectPath,
   changedFiles,
@@ -358,7 +400,6 @@ export const ChatInputArea = memo(function ChatInputArea({
   firstQueueItemId,
   onInputContentChange,
   onSubmitWithQuestionAnswer,
-  modelProviderDisplay,
 }: ChatInputAreaProps) {
   // Local state - changes here don't re-render parent
   const [hasContent, setHasContent] = useState(false)
@@ -395,12 +436,21 @@ export const ChatInputArea = memo(function ChatInputArea({
   const [isModelDropdownOpen, setIsModelDropdownOpen] = useState(false)
   const [lastSelectedModelId, setLastSelectedModelId] = useAtom(lastSelectedModelIdAtom)
   const [selectedOllamaModel, setSelectedOllamaModel] = useAtom(selectedOllamaModelAtom)
-  const availableModels = useAvailableModels()
+  const availableModels = useAvailableModels(modelProviderId)
   const autoOfflineMode = useAtomValue(autoOfflineModeAtom)
   const showOfflineFeatures = useAtomValue(showOfflineModeFeaturesAtom)
   const [selectedModel, setSelectedModel] = useState(
     () => availableModels.models.find((m) => m.id === lastSelectedModelId) || availableModels.models[1],
   )
+
+  // Sync selectedModel when atom value changes (e.g., after localStorage hydration)
+  useEffect(() => {
+    const model = availableModels.models.find((m) => m.id === lastSelectedModelId)
+    if (model && model.id !== selectedModel.id) {
+      setSelectedModel(model)
+    }
+  }, [lastSelectedModelId])
+
   const customClaudeConfig = useAtomValue(customClaudeConfigAtom)
   const normalizedCustomClaudeConfig =
     normalizeCustomClaudeConfig(customClaudeConfig)
@@ -1319,6 +1369,7 @@ export const ChatInputArea = memo(function ChatInputArea({
                               onClick={() => {
                                 setSelectedModel(model)
                                 setLastSelectedModelId(model.id)
+                                onModelChange?.(model.id)
                               }}
                               className="gap-2 justify-between"
                             >

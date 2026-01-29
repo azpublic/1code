@@ -129,7 +129,7 @@ const CodexIcon = (props: React.SVGProps<SVGSVGElement>) => (
 )
 
 // Hook to get available models (including offline models if Ollama is available and debug enabled)
-function useAvailableModels() {
+function useAvailableModels(selectedProviderId: string | null) {
   const showOfflineFeatures = useAtomValue(showOfflineModeFeaturesAtom)
   const { data: ollamaStatus } = trpc.ollama.getStatus.useQuery(undefined, {
     refetchInterval: showOfflineFeatures ? 30000 : false,
@@ -140,22 +140,29 @@ function useAvailableModels() {
   const activeProfileId = useAtomValue(activeProfileIdAtom)
   const modelProfiles = useAtomValue(modelProfilesAtom)
 
-  // Check if active profile is Anthropic-style with custom models
-  const activeProfile = activeProfileId
-    ? modelProfiles.find(p => p.id === activeProfileId)
+  // Use selected provider if available, otherwise fall back to active profile
+  const profileId = selectedProviderId || activeProfileId
+  const profile = profileId
+    ? modelProfiles.find(p => p.id === profileId)
     : null
 
   // Get models with custom names from profile if available
   const getModels = () => {
-    if (activeProfile?.apiFormat === "anthropic") {
-      // Map base models to use custom display names from profile
+    if (profile?.apiFormat === "anthropic") {
+      // Anthropic-style: show haiku/sonnet/opus with custom display names
       return CLAUDE_MODELS.map(model => {
-        const customDisplayName = getModelDisplayName(activeProfile.config, model.id as "opus" | "sonnet" | "haiku")
+        const customDisplayName = getModelDisplayName(profile.config, model.id as "opus" | "sonnet" | "haiku")
         return {
           ...model,
           name: customDisplayName,
         }
       })
+    } else if (profile?.apiFormat === "openai" && profile.config.model) {
+      // OpenAI-style: show the single model from config
+      return [{
+        id: profile.config.model,
+        name: profile.config.model,
+      }]
     }
     return CLAUDE_MODELS
   }
@@ -328,8 +335,8 @@ export function NewChatForm({
     () => agents.find((a) => a.id === lastSelectedAgentId) || agents[0],
   )
 
-  // Get available models (with offline support)
-  const availableModels = useAvailableModels()
+  // Get available models (with offline support) - pass selected provider
+  const availableModels = useAvailableModels(selectedModelProviderId)
   const [selectedOllamaModel, setSelectedOllamaModel] = useAtom(selectedOllamaModelAtom)
 
   const [selectedModel, setSelectedModel] = useState(
@@ -1143,6 +1150,7 @@ export function NewChatForm({
       useWorktree: workMode === "worktree",
       mode: agentMode,
       modelProviderId: selectedModelProviderId,
+      modelId: selectedModel?.id, // Pass the selected model ID
     })
     // Editor, images, and pasted texts are cleared in onSuccess callback
   }, [
@@ -1157,6 +1165,7 @@ export function NewChatForm({
     pastedTexts,
     agentMode,
     trpcUtils,
+    selectedModel?.id,
   ])
 
   const handleMentionSelect = useCallback((mention: FileMentionOption) => {
