@@ -720,6 +720,14 @@ export function NewChatForm({
     return branches.filter((b) => b.name.toLowerCase().includes(search))
   }, [branches, branchSearch])
 
+  // Validate if selected branch exists in the fetched branches list
+  const selectedBranchExists = useMemo(() => {
+    if (!selectedBranch) return false
+    return branches.some(
+      (b) => b.name === selectedBranch && b.type === selectedBranchType
+    )
+  }, [selectedBranch, selectedBranchType, branches])
+
   // Virtualizer for branch list - only active when popover is open
   const branchVirtualizer = useVirtualizer({
     count: filteredBranches.length,
@@ -746,33 +754,40 @@ export function NewChatForm({
     return formatTimeAgo(dateString)
   }
 
-  // Set default branch when project/branches change (only if no saved branch for this project)
+  // Set default branch when project/branches change
+  // Smart default selection: validates persisted branch exists, otherwise selects main/master/first branch
   useEffect(() => {
-    if (
-      branchesQuery.data?.defaultBranch &&
-      validatedProject?.id &&
-      !selectedBranch
-    ) {
-      // Find the default branch in the branches list to get its type
-      // Prefer local over remote if both exist
-      const defaultBranchObj = branches.find(
-        (b) => b.name === branchesQuery.data.defaultBranch && b.isDefault && b.type === "local",
-      ) || branches.find(
-        (b) => b.name === branchesQuery.data.defaultBranch && b.isDefault && b.type === "remote",
-      )
-      // Fallback to "local" if branch not found in list (shouldn't happen but prevents empty selector)
-      const branchType = defaultBranchObj?.type || "local"
-      setSelectedBranch(
-        branchesQuery.data.defaultBranch,
-        branchType,
-      )
+    if (!branches.length || !validatedProject?.id) return
+
+    // Check if current selected branch exists in the fetched branches
+    const currentExists = selectedBranch && branches.some(
+      (b) => b.name === selectedBranch && b.type === selectedBranchType
+    )
+
+    // If selected branch exists, no action needed
+    if (currentExists) return
+
+    // If selected branch doesn't exist or no branch selected, select a smart default
+    // Priority: main (local) -> main (remote) -> master (local) -> master (remote) -> first local -> first remote
+    const defaultCandidates = [
+      branches.find((b) => b.name === "main" && b.type === "local"),
+      branches.find((b) => b.name === "main" && b.type === "remote"),
+      branches.find((b) => b.name === "master" && b.type === "local"),
+      branches.find((b) => b.name === "master" && b.type === "remote"),
+      branches.find((b) => b.type === "local"), // First local branch
+      branches.find((b) => b.type === "remote"), // First remote branch
+    ].filter(Boolean)
+
+    const newDefault = defaultCandidates[0] as typeof branches[0] | undefined
+    if (newDefault) {
+      setSelectedBranch(newDefault.name, newDefault.type)
     }
   }, [
-    branchesQuery.data?.defaultBranch,
+    branches,
     validatedProject?.id,
     selectedBranch,
+    selectedBranchType,
     setSelectedBranch,
-    branches,
   ])
 
   // Auto-focus input when NewChatForm is shown (when clicking "New Chat")
@@ -1068,6 +1083,21 @@ export function NewChatForm({
       }
     }
 
+    // Validate branch exists for worktree mode
+    if (workMode === "worktree") {
+      if (!selectedBranch) {
+        toast.error("Please select a branch")
+        return
+      }
+      const branchExists = branches.some(
+        (b) => b.name === selectedBranch && b.type === selectedBranchType
+      )
+      if (!branchExists) {
+        toast.error(`Selected branch "${selectedBranch}" does not exist. Please select a valid branch.`)
+        return
+      }
+    }
+
     // Create chat with selected project, branch, and initial message
     createChatMutation.mutate({
       projectId: selectedProject.id,
@@ -1093,6 +1123,7 @@ export function NewChatForm({
     pastedTexts,
     agentMode,
     trpcUtils,
+    branches,
   ])
 
   const handleMentionSelect = useCallback((mention: FileMentionOption) => {
@@ -1901,7 +1932,12 @@ export function NewChatForm({
                     >
                       <PopoverTrigger asChild>
                         <button
-                          className="flex items-center gap-1.5 px-2 py-1 text-sm text-muted-foreground hover:text-foreground transition-[background-color,color] duration-150 ease-out rounded-md hover:bg-muted/50 outline-offset-2 focus-visible:outline focus-visible:outline-2 focus-visible:outline-ring/70"
+                          className={cn(
+                            "flex items-center gap-1.5 px-2 py-1 text-sm transition-[background-color,color] duration-150 ease-out rounded-md outline-offset-2 focus-visible:outline focus-visible:outline-2 focus-visible:outline-ring/70",
+                            selectedBranch && !selectedBranchExists
+                              ? "text-red-500 bg-red-500/10 hover:bg-red-500/20"
+                              : "text-muted-foreground hover:text-foreground hover:bg-muted/50",
+                          )}
                           disabled={branchesQuery.isLoading}
                         >
                           <BranchIcon className="w-4 h-4" />
