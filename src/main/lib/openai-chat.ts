@@ -21,6 +21,8 @@ export interface OpenAIChatOptions {
   maxTokens?: number
   /** Temperature for randomness (default: 0.7) */
   temperature?: number
+  /** Request structured JSON output (e.g., {"type": "json_object"}) */
+  responseFormat?: { type: "json_object" } | null
 }
 
 interface OpenAIMessage {
@@ -47,12 +49,12 @@ interface OpenAIResponse {
  * Perform a chat completion using OpenAI-compatible API format
  *
  * @param options - Chat completion options
- * @returns The generated text content
+ * @returns The generated text content, or parsed object if responseFormat is json_object
  * @throws Error if the request fails
  */
 export async function openAIChatCompletion(
   options: OpenAIChatOptions,
-): Promise<string> {
+): Promise<string | Record<string, unknown>> {
   const {
     prompt,
     systemPrompt,
@@ -61,6 +63,7 @@ export async function openAIChatCompletion(
     baseUrl,
     maxTokens = 100,
     temperature = 0.7,
+    responseFormat,
   } = options
 
   // Build messages array
@@ -87,20 +90,28 @@ export async function openAIChatCompletion(
   console.log("[OpenAIChat] Sending request to:", url)
   console.log("[OpenAIChat] Model:", model)
   console.log("[OpenAIChat] Messages:", messages.length)
+  console.log("[OpenAIChat] Response format:", responseFormat?.type || "text")
 
   try {
+    const requestBody: Record<string, unknown> = {
+      model,
+      messages,
+      temperature,
+      max_tokens: maxTokens,
+    }
+
+    // Add response_format if specified (for structured JSON output)
+    if (responseFormat) {
+      requestBody.response_format = responseFormat
+    }
+
     const response = await fetch(url, {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
         Authorization: `Bearer ${apiKey}`,
       },
-      body: JSON.stringify({
-        model,
-        messages,
-        temperature,
-        max_tokens: maxTokens,
-      }),
+      body: JSON.stringify(requestBody),
     })
 
     if (!response.ok) {
@@ -132,7 +143,6 @@ export async function openAIChatCompletion(
       throw new Error("Empty response from API")
     }
 
-    console.log("[OpenAIChat] Generated content:", content)
     console.log("[OpenAIChat] Tokens used:", data.usage?.total_tokens || "unknown")
     console.log("[OpenAIChat] Finish reason:", choice.finish_reason)
 
@@ -141,6 +151,20 @@ export async function openAIChatCompletion(
       console.warn("[OpenAIChat] Response hit token limit, consider increasing maxTokens")
     }
 
+    // If response_format is json_object, parse and return the JSON object
+    if (responseFormat?.type === "json_object") {
+      try {
+        const parsed = JSON.parse(content) as Record<string, unknown>
+        console.log("[OpenAIChat] Generated JSON:", parsed)
+        return parsed
+      } catch (parseError) {
+        console.error("[OpenAIChat] Failed to parse JSON response:", content)
+        throw new Error(`Failed to parse JSON response: ${parseError}`)
+      }
+    }
+
+    // Otherwise return raw text content
+    console.log("[OpenAIChat] Generated content:", content)
     return content
   } catch (error) {
     console.error("[OpenAIChat] Error:", error)

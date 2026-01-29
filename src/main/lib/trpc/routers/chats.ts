@@ -1200,7 +1200,8 @@ export const chatsRouter = router({
         chat.baseBranch ?? undefined,
       )
 
-      if (!result.success || !result.diff) {
+      // Check for actual failure (diff === undefined means error, diff === "" is valid - just no changes)
+      if (!result.success || result.diff === undefined) {
         throw new Error("Failed to get diff")
       }
 
@@ -1232,29 +1233,35 @@ export const chatsRouter = router({
       if (input.apiFormat === "openai" && input.model && input.token && input.baseUrl) {
         console.log("[generateCommitMessage] Using OpenAI-style API for commit message generation")
         try {
-          const message = await openAIChatCompletion({
-            prompt: `Generate a concise conventional commit message for these changes.
+          const result = await openAIChatCompletion({
+            systemPrompt: `You are a commit message generator. Generate a conventional commit message for code changes.
+Return your response as a JSON object with this exact format:
+{
+  "message": "type: description"
+}
 
-Changes: ${files.length} files, +${additions}/-${deletions} lines
-
-Diff (truncated):
-${filteredDiff.slice(0, 5000)}
-
-Guidelines:
+Rules:
 - Use format: type: short description
 - Types: feat (new feature), fix (bug fix), docs, style, refactor, test, chore
-- Keep the description short and specific
-- Only output the commit message, nothing else
-
-Commit message:`,
+- Keep the description short and specific (one line)
+- No explanations or extra text
+- Only valid JSON output`,
+            prompt: `Generate a commit message for these changes:\n\nChanges: ${files.length} files, +${additions}/-${deletions} lines\n\nDiff (truncated):\n${filteredDiff.slice(0, 5000)}`,
             model: input.model,
             apiKey: input.token,
             baseUrl: input.baseUrl,
-            maxTokens: 1000, // Increased for reasoning models like z.ai glm-4.7
+            maxTokens: 1000,
             temperature: 0.3,
+            responseFormat: { type: "json_object" },
           })
-          console.log("[generateCommitMessage] Generated via OpenAI-style API:", message)
-          return { message }
+          // Result is an object when using JSON mode
+          const parsedResult = result as { message?: string }
+          const message = parsedResult.message?.trim()
+          if (message) {
+            console.log("[generateCommitMessage] Generated via OpenAI-style API (JSON):", message)
+            return { message }
+          }
+          throw new Error("No message in JSON response")
         } catch (error) {
           console.log("[generateCommitMessage] OpenAI-style API failed:", error)
           // Fall through to other methods below
@@ -1491,20 +1498,35 @@ Commit message:`
         if (input.apiFormat === "openai" && input.model && (input.token || input.hasToken) && input.baseUrl) {
           console.log("[generateSubChatName] Using OpenAI-style API for chat name generation")
           try {
-            const name = await openAIChatCompletion({
-              prompt: `Generate a very short (2-5 words) title for a coding chat that starts with this message. Only output the title, nothing else. No quotes, no explanations.
+            const result = await openAIChatCompletion({
+              systemPrompt: `You are a title generator. Generate a very short (2-5 words) title for a coding chat based on the user's message.
+Return your response as a JSON object with this exact format:
+{
+  "title": "short title here"
+}
 
-User message: "${input.userMessage.slice(0, 500)}"
-
-Title:`,
+Rules:
+- Keep titles to 2-5 words maximum
+- Be concise and descriptive
+- No quotes around the title
+- No explanations or extra text
+- Only valid JSON output`,
+              prompt: `Generate a title for this coding chat message:\n\n"${input.userMessage.slice(0, 500)}"`,
               model: input.model,
               apiKey: input.token || "dummy", // Some local providers don't need a real token
               baseUrl: input.baseUrl,
-              maxTokens: 500, // Increased for reasoning models like z.ai glm-4.7
+              maxTokens: 500,
               temperature: 0.7,
+              responseFormat: { type: "json_object" },
             })
-            console.log("[generateSubChatName] Generated name via OpenAI-style API:", name)
-            return { name }
+            // Result is an object when using JSON mode
+            const parsedResult = result as { title?: string }
+            const name = parsedResult.title?.trim()
+            if (name) {
+              console.log("[generateSubChatName] Generated name via OpenAI-style API (JSON):", name)
+              return { name }
+            }
+            throw new Error("No title in JSON response")
           } catch (error) {
             console.log("[generateSubChatName] OpenAI-style API failed:", error)
             // Fall through to other methods below
