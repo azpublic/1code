@@ -1,5 +1,5 @@
 import { useAtom } from "jotai"
-import { ChevronDown, ChevronUp, Edit, Plus, Trash2 } from "lucide-react"
+import { ChevronDown, ChevronUp, Edit, Plus, Trash2, Zap } from "lucide-react"
 import { useState } from "react"
 import { toast } from "sonner"
 import { modelProfilesAtom, OFFLINE_PROFILE, type ModelProfile, type ApiFormat } from "../../../lib/atoms"
@@ -8,6 +8,7 @@ import { Button } from "../../ui/button"
 import { Input } from "../../ui/input"
 import { Label } from "../../ui/label"
 import { ModelProfileDialog } from "./model-profile-dialog"
+import { trpc } from "../../../lib/trpc"
 
 interface ProfileCardProps {
   profile: ModelProfile
@@ -45,8 +46,44 @@ function ProfileCard({
   const [editToken, setEditToken] = useState(profile.config.token)
   const [editBaseUrl, setEditBaseUrl] = useState(profile.config.baseUrl)
 
+  // Test connection state
+  const [isTesting, setIsTesting] = useState(false)
+  const testModelProvider = trpc.settings.testModelProvider.useMutation()
+
   // Don't show delete button for offline profile
   const canDelete = !profile.isOffline
+
+  // Handle test connection
+  const handleTestConnection = async () => {
+    setIsTesting(true)
+    try {
+      const result = await testModelProvider.mutateAsync({
+        apiFormat: profile.apiFormat,
+        baseUrl: profile.config.baseUrl,
+        token: profile.config.token,
+        model: profile.config.model,
+        haikuModel: profile.config.haikuModel,
+        sonnetModel: profile.config.sonnetModel,
+        opusModel: profile.config.opusModel,
+      })
+
+      if (result.success) {
+        toast.success(`Connection successful! Model: ${result.model}`, {
+          description: result.details,
+        })
+      } else {
+        toast.error(result.error, {
+          description: result.details,
+        })
+      }
+    } catch (error) {
+      toast.error('Connection test failed', {
+        description: error instanceof Error ? error.message : 'Unknown error',
+      })
+    } finally {
+      setIsTesting(false)
+    }
+  }
 
   // Get API format badge variant
   const getApiFormatBadgeVariant = (format: ApiFormat) => {
@@ -184,6 +221,18 @@ function ProfileCard({
               onClick={onSetActive}
             >
               Set Active
+            </Button>
+          )}
+          {!isEditing && (
+            <Button
+              size="icon"
+              variant="ghost"
+              className="h-7 w-7"
+              onClick={handleTestConnection}
+              disabled={isTesting}
+              title="Test connection"
+            >
+              <Zap className={`h-4 w-4 ${isTesting ? 'animate-pulse' : ''}`} />
             </Button>
           )}
           {!isEditing && (
