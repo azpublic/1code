@@ -71,17 +71,13 @@ if (app.isPackaged && !IS_DEV) {
 }
 
 // URL configuration (exported for use in other modules)
-// In packaged app, ALWAYS use production URL to prevent localhost leaking into releases
-// In dev mode, allow override via MAIN_VITE_API_URL env variable
+// DISABLED: 21st.dev API has been disabled for local-only operation
 export function getBaseUrl(): string {
-  if (app.isPackaged) {
-    return "https://21st.dev"
-  }
-  return import.meta.env.MAIN_VITE_API_URL || "https://21st.dev"
+  throw new Error("21st.dev API is disabled. The app now operates in local-only mode.")
 }
 
 export function getAppUrl(): string {
-  return process.env.ELECTRON_RENDERER_URL || "https://21st.dev/agents"
+  throw new Error("21st.dev web app is disabled. The app now operates in local-only mode.")
 }
 
 // Auth manager singleton (use the one from auth-manager module)

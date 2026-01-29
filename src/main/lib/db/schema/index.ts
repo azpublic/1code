@@ -56,6 +56,8 @@ export const chats = sqliteTable("chats", {
   // PR tracking fields
   prUrl: text("pr_url"),
   prNumber: integer("pr_number"),
+  // Model provider for this chat (null = use active profile)
+  modelProviderId: text("model_provider_id"),
 }, (table) => [
   index("chats_worktree_path_idx").on(table.worktreePath),
 ])

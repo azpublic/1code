@@ -1,0 +1,1 @@
+ALTER TABLE `chats` ADD `model_provider_id` text;

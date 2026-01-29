@@ -24,7 +24,8 @@ function initAutoUpdaterConfig() {
 }
 
 // CDN base URL for updates
-const CDN_BASE = "https://cdn.21st.dev/releases/desktop"
+// DISABLED: 21st.dev CDN updates have been disabled for local-only operation
+const CDN_BASE = ""
 
 // Minimum interval between update checks (prevent spam on rapid focus/blur)
 const MIN_CHECK_INTERVAL = 60 * 1000 // 1 minute
@@ -54,6 +55,7 @@ function sendToAllRenderers(channel: string, data?: unknown) {
 
 /**
  * Initialize the auto-updater with event handlers and IPC
+ * DISABLED: 21st.dev auto-updater has been disabled for local-only operation
  */
 export async function initAutoUpdater(getWindows: () => BrowserWindow[]) {
   getAllWindows = getWindows
@@ -61,223 +63,81 @@ export async function initAutoUpdater(getWindows: () => BrowserWindow[]) {
   // Initialize config
   initAutoUpdaterConfig()
 
-  // Configure feed URL to point to R2 CDN
-  // Note: We use a custom request headers to bypass CDN cache
-  autoUpdater.setFeedURL({
-    provider: "generic",
-    url: CDN_BASE,
-  })
+  // Auto-updater disabled - app now operates in local-only mode
+  log.info("[AutoUpdater] Auto-updater disabled - app operates in local-only mode")
 
-  // Add cache-busting to update requests
-  autoUpdater.requestHeaders = {
-    "Cache-Control": "no-cache, no-store, must-revalidate",
-    "Pragma": "no-cache",
-  }
-
-  // Event: Checking for updates
-  autoUpdater.on("checking-for-update", () => {
-    log.info("[AutoUpdater] Checking for updates...")
-    sendToAllRenderers("update:checking")
-  })
-
-  // Event: Update available
-  autoUpdater.on("update-available", (info: UpdateInfo) => {
-    log.info(`[AutoUpdater] Update available: v${info.version}`)
-    // Update menu to show "Update to vX.X.X..."
-    const setUpdateAvailable = (global as any).__setUpdateAvailable
-    if (setUpdateAvailable) {
-      setUpdateAvailable(true, info.version)
-    }
-    sendToAllRenderers("update:available", {
-      version: info.version,
-      releaseDate: info.releaseDate,
-      releaseNotes: info.releaseNotes,
-    })
-  })
-
-  // Event: No update available
-  autoUpdater.on("update-not-available", (info: UpdateInfo) => {
-    log.info(`[AutoUpdater] App is up to date (v${info.version})`)
-    sendToAllRenderers("update:not-available", {
-      version: info.version,
-    })
-  })
-
-  // Event: Download progress
-  autoUpdater.on("download-progress", (progress: ProgressInfo) => {
-    log.info(
-      `[AutoUpdater] Download progress: ${progress.percent.toFixed(1)}% ` +
-        `(${formatBytes(progress.transferred)}/${formatBytes(progress.total)})`,
-    )
-    sendToAllRenderers("update:progress", {
-      percent: progress.percent,
-      bytesPerSecond: progress.bytesPerSecond,
-      transferred: progress.transferred,
-      total: progress.total,
-    })
-  })
-
-  // Event: Update downloaded
-  autoUpdater.on("update-downloaded", (info: UpdateInfo) => {
-    log.info(`[AutoUpdater] Update downloaded: v${info.version}`)
-    // Reset menu back to "Check for Updates..." since update is ready
-    const setUpdateAvailable = (global as any).__setUpdateAvailable
-    if (setUpdateAvailable) {
-      setUpdateAvailable(false)
-    }
-    sendToAllRenderers("update:downloaded", {
-      version: info.version,
-      releaseDate: info.releaseDate,
-      releaseNotes: info.releaseNotes,
-    })
-  })
-
-  // Event: Error
-  autoUpdater.on("error", (error: Error) => {
-    log.error("[AutoUpdater] Error:", error.message)
-    sendToAllRenderers("update:error", error.message)
-  })
-
-  // Register IPC handlers
+  // Register IPC handlers (for operations that will fail gracefully)
   registerIpcHandlers()
-
-  log.info("[AutoUpdater] Initialized with feed URL:", CDN_BASE)
 }
 
 /**
  * Register IPC handlers for update operations
+ * DISABLED: All operations will fail gracefully with messages
  */
 function registerIpcHandlers() {
-  // Check for updates
-  ipcMain.handle("update:check", async (_event, force?: boolean) => {
-    if (!app.isPackaged) {
-      log.info("[AutoUpdater] Skipping update check in dev mode")
-      return null
-    }
-    try {
-      // If force is true, add cache-busting timestamp to URL
-      if (force) {
-        const cacheBuster = `?t=${Date.now()}`
-        autoUpdater.setFeedURL({
-          provider: "generic",
-          url: `${CDN_BASE}${cacheBuster}`,
-        })
-        log.info("[AutoUpdater] Force check with cache-busting:", `${CDN_BASE}${cacheBuster}`)
-      }
-      const result = await autoUpdater.checkForUpdates()
-      // Reset feed URL back to normal after force check
-      if (force) {
-        autoUpdater.setFeedURL({
-          provider: "generic",
-          url: CDN_BASE,
-        })
-      }
-      return result?.updateInfo || null
-    } catch (error) {
-      log.error("[AutoUpdater] Check failed:", error)
-      return null
-    }
+  // Check for updates - disabled, returns null
+  ipcMain.handle("update:check", async (_event, _force?: boolean) => {
+    log.info("[AutoUpdater] Auto-updater disabled - skipping update check")
+    return null
   })
 
-  // Download update
+  // Download update - disabled, returns false
   ipcMain.handle("update:download", async () => {
-    try {
-      await autoUpdater.downloadUpdate()
-      return true
-    } catch (error) {
-      log.error("[AutoUpdater] Download failed:", error)
-      return false
-    }
+    log.info("[AutoUpdater] Auto-updater disabled - cannot download update")
+    return false
   })
 
-  // Install update and restart
+  // Install update and restart - disabled, does nothing
   ipcMain.handle("update:install", () => {
-    log.info("[AutoUpdater] Installing update and restarting...")
-    // Give renderer time to save state
-    setTimeout(() => {
-      autoUpdater.quitAndInstall(false, true)
-    }, 100)
+    log.info("[AutoUpdater] Auto-updater disabled - cannot install update")
   })
 
-  // Get current update state (useful for re-renders)
+  // Get current update state
   ipcMain.handle("update:get-state", () => {
     return {
       currentVersion: app.getVersion(),
-      autoUpdateCheckEnabled,
+      autoUpdateCheckEnabled: false, // Always false since disabled
     }
   })
 
-  // Set auto-update check enabled state
-  ipcMain.handle("update:set-auto-check", (_event, enabled: boolean) => {
-    autoUpdateCheckEnabled = enabled
-    log.info(`[AutoUpdater] Auto-update check ${enabled ? "enabled" : "disabled"}`)
-    return { success: true, enabled }
+  // Set auto-update check enabled state - no-op since disabled
+  ipcMain.handle("update:set-auto-check", (_event, _enabled: boolean) => {
+    log.info("[AutoUpdater] Auto-updater disabled - ignoring set-auto-check")
+    return { success: false, enabled: false }
   })
 
-  // Get auto-update check enabled state
+  // Get auto-update check enabled state - always false
   ipcMain.handle("update:get-auto-check", () => {
-    return autoUpdateCheckEnabled
+    return false
   })
 }
 
 /**
  * Manually trigger an update check
+ * DISABLED: 21st.dev auto-updater has been disabled for local-only operation
  * @param force - Skip the minimum interval check
  */
-export async function checkForUpdates(force = false) {
-  if (!app.isPackaged) {
-    log.info("[AutoUpdater] Skipping update check in dev mode")
-    return Promise.resolve(null)
-  }
-
-  // Skip if auto-update check is disabled (unless forced by user)
-  if (!force && !autoUpdateCheckEnabled) {
-    log.info("[AutoUpdater] Auto-update check is disabled")
-    return Promise.resolve(null)
-  }
-
-  // Respect minimum interval to prevent spam
-  const now = Date.now()
-  if (!force && now - lastCheckTime < MIN_CHECK_INTERVAL) {
-    log.info(
-      `[AutoUpdater] Skipping check - last check was ${Math.round((now - lastCheckTime) / 1000)}s ago`,
-    )
-    return Promise.resolve(null)
-  }
-
-  lastCheckTime = now
-  return autoUpdater.checkForUpdates()
+export async function checkForUpdates(_force = false) {
+  log.info("[AutoUpdater] Auto-updater disabled - skipping update check")
+  return Promise.resolve(null)
 }
 
 /**
  * Start downloading the update
+ * DISABLED: 21st.dev auto-updater has been disabled for local-only operation
  */
 export async function downloadUpdate() {
-  if (!app.isPackaged) {
-    log.info("[AutoUpdater] Skipping download in dev mode")
-    return false
-  }
-
-  try {
-    log.info("[AutoUpdater] Starting update download...")
-    await autoUpdater.downloadUpdate()
-    return true
-  } catch (error) {
-    log.error("[AutoUpdater] Download failed:", error)
-    return false
-  }
+  log.info("[AutoUpdater] Auto-updater disabled - cannot download update")
+  return false
 }
 
 /**
  * Check for updates when window gains focus
- * This is more natural than checking on an interval
+ * DISABLED: 21st.dev auto-updater has been disabled for local-only operation
  */
 export function setupFocusUpdateCheck(_getWindows: () => BrowserWindow[]) {
-  // Listen for window focus events
-  app.on("browser-window-focus", () => {
-    log.info("[AutoUpdater] Window focused - checking for updates")
-    checkForUpdates()
-  })
+  // Auto-updater disabled - app now operates in local-only mode
+  log.info("[AutoUpdater] Auto-updater disabled - skipping focus update check")
 }
 
 /**

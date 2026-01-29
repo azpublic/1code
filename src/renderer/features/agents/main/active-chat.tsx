@@ -62,13 +62,20 @@ import { getQueryClient } from "../../../contexts/TRPCProvider"
 import { trackMessageSent } from "../../../lib/analytics"
 import { apiFetch } from "../../../lib/api-fetch"
 import {
+  appTaskProviderIdAtom,
   chatSourceModeAtom,
   customClaudeConfigAtom,
   defaultAgentModeAtom,
   isDesktopAtom, isFullscreenAtom,
   normalizeCustomClaudeConfig,
   selectedOllamaModelAtom,
-  soundNotificationsEnabledAtom
+  soundNotificationsEnabledAtom,
+  autoOfflineModeAtom,
+  showOfflineModeFeaturesAtom,
+  activeProfileIdAtom,
+  getModelDisplayName,
+  modelProfilesAtom,
+  type ApiFormat,
 } from "../../../lib/atoms"
 import { useRemoteChat } from "../../../lib/hooks/use-remote-chats"
 import { remoteApi } from "../../../lib/remote-api"
@@ -1859,6 +1866,7 @@ const ChatViewInner = memo(function ChatViewInner({
   onRestoreWorkspace,
   existingPrUrl,
   isActive = true,
+  modelProviderDisplay,
 }: {
   chat: Chat<any>
   subChatId: string
@@ -1883,6 +1891,7 @@ const ChatViewInner = memo(function ChatViewInner({
   onRestoreWorkspace?: () => void
   existingPrUrl?: string | null
   isActive?: boolean
+  modelProviderDisplay?: string
 }) {
   const hasTriggeredRenameRef = useRef(false)
   const hasTriggeredAutoGenerateRef = useRef(false)
@@ -4187,6 +4196,7 @@ const ChatViewInner = memo(function ChatViewInner({
         firstQueueItemId={queue[0]?.id}
         onInputContentChange={setInputHasContent}
         onSubmitWithQuestionAnswer={submitWithQuestionAnswerCallback}
+        modelProviderDisplay={modelProviderDisplay}
       />
 
         {/* Scroll to bottom button - isolated component to avoid re-renders during streaming */}
@@ -4249,6 +4259,11 @@ export function ChatView({
   const normalizedCustomClaudeConfig =
     normalizeCustomClaudeConfig(customClaudeConfig)
   const hasCustomClaudeConfig = Boolean(normalizedCustomClaudeConfig)
+
+  // Get current model profile (from chat's modelProviderId or active profile)
+  const modelProfiles = useAtomValue(modelProfilesAtom)
+  const activeProfileId = useAtomValue(activeProfileIdAtom)
+
   const setLoadingSubChats = useSetAtom(loadingSubChatsAtom)
   const unseenChanges = useAtomValue(agentsUnseenChangesAtom)
   const setUnseenChanges = useSetAtom(agentsUnseenChangesAtom)
@@ -4706,6 +4721,71 @@ export function ChatView({
   }, [chatSourceMode, remoteAgentChat, localAgentChat])
 
   const isLoading = chatSourceMode === "sandbox" ? isRemoteLoading : isLocalLoading
+
+  // Helper to compute model provider display name (lazy, uses agentChat)
+  const getModelProviderDisplay = useCallback(() => {
+    // If agentChat is not available yet, show default
+    if (!agentChat) {
+      return hasCustomClaudeConfig ? "Custom Model" : "Sonnet 4.5"
+    }
+
+    // Get profile from chat's modelProviderId or fall back to active profile
+    const profileId = agentChat.modelProviderId || activeProfileId
+    const profile = profileId ? modelProfiles.find(p => p.id === profileId) : null
+
+    if (profile) {
+      // For Anthropic-style providers, use the selected model's display name
+      if (profile.apiFormat === "anthropic") {
+        // Get the display name for the currently selected model tier
+        const selection = (selectedModelId || "sonnet") as "opus" | "sonnet" | "haiku"
+        return getModelDisplayName(profile.config, selection)
+      }
+
+      // For providers with a single model field (OpenAI-style or legacy)
+      if (profile.config.model) {
+        const modelLower = profile.config.model.toLowerCase()
+        if (profile.config.baseUrl.includes("anthropic")) {
+          if (modelLower.includes("opus") || modelLower.includes("claude-3-7")) {
+            return "Opus"
+          } else if (modelLower.includes("sonnet")) {
+            return "Sonnet"
+          } else if (modelLower.includes("haiku")) {
+            return "Haiku"
+          }
+        }
+        // For OpenAI-style, show profile name (could include model name in profile name)
+        return profile.name
+      }
+
+      // Fallback for legacy profiles
+      return profile.name
+    }
+
+    // Fall back to legacy config display
+    return hasCustomClaudeConfig ? "Custom Model" : "Sonnet 4.5"
+  }, [agentChat, activeProfileId, modelProfiles, hasCustomClaudeConfig, selectedModelId])
+
+  // Compute display name for current model provider (for use in JSX)
+  const modelProviderDisplay = getModelProviderDisplay()
+
+  // Log model provider state (for debugging)
+  useEffect(() => {
+    const modelProfiles = appStore.get(modelProfilesAtom)
+    const appTaskProviderId = appStore.get(appTaskProviderIdAtom)
+    const activeProfileId = appStore.get(activeProfileIdAtom)
+
+    console.log("[ModelProviders] ===== ALL MODEL PROFILES =====")
+    modelProfiles.forEach(p => {
+      const modelInfo = p.apiFormat === "anthropic"
+        ? `haiku=${p.config.haikuModel || "unset"}, sonnet=${p.config.sonnetModel || "unset"}, opus=${p.config.opusModel || "unset"}`
+        : `model=${p.config.model || "unset"}`
+      console.log(`[ModelProviders] - ${p.name} (${p.id}): format=${p.apiFormat}, ${modelInfo}`)
+    })
+    console.log(`[ModelProviders] App Task Provider ID: ${appTaskProviderId || "not set"}`)
+    console.log(`[ModelProviders] Active Profile ID: ${activeProfileId || "not set"}`)
+    console.log(`[ModelProviders] Chat modelProviderId: ${agentChat?.modelProviderId || "not set"}`)
+    console.log("[ModelProviders] ======================================")
+  }, [agentChat?.modelProviderId])
 
   // Compute if we're waiting for local chat data (used as loading gate)
   const isLocalChatLoading = chatSourceMode === "local" && isLocalLoading
@@ -5641,6 +5721,7 @@ Make sure to preserve all functionality from both branches when resolving confli
           cwd: worktreePath,
           projectPath,
           mode: subChatMode,
+          modelProviderId: agentChat?.modelProviderId,
         })
       }
 
@@ -5837,6 +5918,7 @@ Make sure to preserve all functionality from both branches when resolving confli
         cwd: worktreePath,
         projectPath,
         mode: newSubChatMode,
+        modelProviderId: agentChat?.modelProviderId,
       })
     }
 
@@ -6230,7 +6312,89 @@ Make sure to preserve all functionality from both branches when resolving confli
         userMessage,
         isFirstSubChat: isFirst,
         generateName: async (msg) => {
-          return generateSubChatNameMutation.mutateAsync({ userMessage: msg, ollamaModel: selectedOllamaModel })
+          // Get offline mode settings
+          const showOfflineFeatures = appStore.get(showOfflineModeFeaturesAtom)
+          const autoOffline = appStore.get(autoOfflineModeAtom)
+          const offlineModeEnabled = showOfflineFeatures && autoOffline
+
+          // Get model config for app tasks (chat name generation)
+          // IMPORTANT: App tasks (chat names, commit messages) require OpenAI-compatible API
+          // Priority: appTaskProviderIdAtom > first OpenAI-format profile > legacy custom config
+          const appTaskProviderId = appStore.get(appTaskProviderIdAtom)
+          const modelProfiles = appStore.get(modelProfilesAtom)
+
+          console.log("[auto-rename] appTaskProviderId:", appTaskProviderId)
+          console.log("[auto-rename] All profiles:", modelProfiles.map(p => ({ id: p.id, name: p.name, apiFormat: p.apiFormat })))
+
+          // Find an OpenAI-format profile to use
+          let profile = null
+
+          // 1. Try appTaskProviderId first (user-selected for app tasks)
+          if (appTaskProviderId) {
+            profile = modelProfiles.find(p => p.id === appTaskProviderId && p.apiFormat === "openai")
+            console.log("[auto-rename] Found app task provider:", profile?.name)
+          }
+
+          // 2. Fall back to first OpenAI-format profile if no app task provider set
+          if (!profile) {
+            profile = modelProfiles.find(p => p.apiFormat === "openai")
+            console.log("[auto-rename] Using first OpenAI profile:", profile?.name)
+          }
+
+          // Fall back to legacy custom config if no OpenAI profile found
+          let model: string | undefined
+          let token: string | undefined
+          let baseUrl: string | undefined
+          let apiFormat: ApiFormat | undefined
+
+          if (profile) {
+            // Use profile config (guaranteed to be OpenAI format now)
+            model = profile.config.model
+            token = profile.config.token
+            baseUrl = profile.config.baseUrl
+            apiFormat = profile.apiFormat
+            console.log("[auto-rename] Using OpenAI profile config:", { model, apiFormat, hasToken: !!token, baseUrl })
+          } else {
+            console.log("[auto-rename] No OpenAI profile found, falling back to legacy config")
+            // Fall back to legacy custom config
+            const storedCustomConfig = appStore.get(customClaudeConfigAtom)
+            const customConfig = normalizeCustomClaudeConfig(storedCustomConfig)
+            if (customConfig) {
+              model = customConfig.model
+              token = customConfig.token
+              baseUrl = customConfig.baseUrl
+              apiFormat = "openai" // Assume OpenAI for legacy config in app tasks
+            }
+          }
+
+          console.log("[auto-rename] Calling mutation with:", { apiFormat, model, hasToken: !!token, baseUrl, tokenLength: token?.length || 0, tokenPreview: token?.substring(0, 10) + '...' })
+
+          try {
+            const mutationInput = {
+            userMessage: msg,
+            ollamaModel: selectedOllamaModel,
+            offlineModeEnabled,
+            projectId: agentChat?.project?.id,
+            // New multi-model parameters
+            model,
+            token,
+            baseUrl,
+            apiFormat,
+            hasToken: !!token,
+          }
+            console.log("[auto-rename] Full mutation input keys:", Object.keys(mutationInput))
+            console.log("[auto-rename] Full mutation input (sanitized):", {
+              ...mutationInput,
+              token: token ? `[${token.length} chars]` : undefined,
+            })
+
+            const result = await generateSubChatNameMutation.mutateAsync(mutationInput)
+          console.log("[auto-rename] Mutation returned:", result)
+          return result
+          } catch (error) {
+            console.error("[auto-rename] Mutation failed:", error)
+            throw error
+          }
         },
         renameSubChat: async (input) => {
           await renameSubChatMutation.mutateAsync(input)
@@ -6599,6 +6763,7 @@ Make sure to preserve all functionality from both branches when resolving confli
                       onRestoreWorkspace={handleRestoreWorkspace}
                       existingPrUrl={agentChat?.prUrl}
                       isActive={isActive}
+                      modelProviderDisplay={modelProviderDisplay}
                     />
                   </div>
                 )
@@ -6640,16 +6805,7 @@ Make sure to preserve all functionality from both branches when resolving confli
                           >
                             <ClaudeCodeIcon className="h-3.5 w-3.5" />
                             <span>
-                              {hasCustomClaudeConfig ? (
-                                "Custom Model"
-                              ) : (
-                                <>
-                                  Sonnet{" "}
-                                  <span className="text-muted-foreground">
-                                    4.5
-                                  </span>
-                                </>
-                              )}
+                              {modelProviderDisplay}
                             </span>
                             <ChevronDown className="h-3 w-3 shrink-0 opacity-50" />
                           </button>

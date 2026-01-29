@@ -1461,6 +1461,36 @@ const SidebarHeader = memo(function SidebarHeader({
                   </>
                 ) : (
                   <>
+                    {/* Settings (always available) */}
+                    <DropdownMenuItem
+                      className="gap-2"
+                      onSelect={() => {
+                        setIsDropdownOpen(false)
+                        setSettingsActiveTab("profile")
+                        setSettingsDialogOpen(true)
+                      }}
+                    >
+                      <SettingsIcon className="h-3.5 w-3.5 text-muted-foreground flex-shrink-0" />
+                      Settings
+                    </DropdownMenuItem>
+
+                    {/* DevTools (always available in development) */}
+                    {(process.env.NODE_ENV === "development" || (global as any).__devToolsUnlocked) && (
+                      <DropdownMenuItem
+                        className="gap-2"
+                        onSelect={() => {
+                          setIsDropdownOpen(false)
+                          window.desktopApi?.toggleDevTools()
+                        }}
+                      >
+                        <Terminal className="h-3.5 w-3.5 text-muted-foreground flex-shrink-0" />
+                        <span className="flex-1">DevTools</span>
+                        <Kbd className="ml-auto text-xs">⇧⌘D</Kbd>
+                      </DropdownMenuItem>
+                    )}
+
+                    <DropdownMenuSeparator />
+
                     {/* Login for unauthenticated users */}
                     <div className="">
                       <DropdownMenuItem

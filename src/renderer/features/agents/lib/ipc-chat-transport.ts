@@ -3,15 +3,17 @@ import type { ChatTransport, UIMessage } from "ai"
 import { toast } from "sonner"
 import {
   agentsLoginModalOpenAtom,
-  customClaudeConfigAtom,
   extendedThinkingEnabledAtom,
   historyEnabledAtom,
   sessionInfoAtom,
   selectedOllamaModelAtom,
   showOfflineModeFeaturesAtom,
   autoOfflineModeAtom,
-  type CustomClaudeConfig,
+  activeProfileIdAtom,
+  modelProfilesAtom,
+  customClaudeConfigAtom,
   normalizeCustomClaudeConfig,
+  type CustomClaudeConfig,
 } from "../../../lib/atoms"
 import { appStore } from "../../../lib/jotai-store"
 import { trpcClient } from "../../../lib/trpc"
@@ -23,6 +25,7 @@ import {
   pendingAuthRetryMessageAtom,
   pendingUserQuestionsAtom,
 } from "../atoms"
+import { getModelForSelection } from "../../../lib/atoms"
 import { useAgentSubChatStore } from "../stores/sub-chat-store"
 
 // Error categories and their user-friendly messages
@@ -126,6 +129,7 @@ type IPCChatTransportConfig = {
   projectPath?: string // Original project path for MCP config lookup (when using worktrees)
   mode: "plan" | "agent"
   model?: string
+  modelProviderId?: string | null // Model provider ID from chat (overrides active profile)
 }
 
 // Image attachment type matching the tRPC schema
@@ -165,12 +169,51 @@ export class IPCChatTransport implements ChatTransport<UIMessage> {
 
     // Read model selection dynamically (so model changes apply to existing chats)
     const selectedModelId = appStore.get(lastSelectedModelIdAtom)
-    const modelString = MODEL_ID_MAP[selectedModelId]
 
-    const storedCustomConfig = appStore.get(
-      customClaudeConfigAtom,
-    ) as CustomClaudeConfig
-    const customConfig = normalizeCustomClaudeConfig(storedCustomConfig)
+    // Get custom config from model profile (chat-specific or active profile)
+    // Priority: modelProviderId from chat > activeProfileId > legacy customClaudeConfigAtom
+    let customConfig: ReturnType<typeof normalizeCustomClaudeConfig> | undefined = undefined
+    let profileApiFormat: "anthropic" | "openai" | null = null
+
+    if (this.config.modelProviderId) {
+      // Use chat-specific model provider
+      const modelProfiles = appStore.get(modelProfilesAtom)
+      const profile = modelProfiles.find(p => p.id === this.config.modelProviderId)
+      if (profile) {
+        customConfig = normalizeCustomClaudeConfig(profile.config)
+        profileApiFormat = profile.apiFormat
+        console.log(`[IPCChatTransport] Using chat-specific model provider: ${profile.name} (${profile.apiFormat})`)
+      }
+    }
+
+    if (!customConfig) {
+      // Fall back to active profile
+      const activeProfileId = appStore.get(activeProfileIdAtom)
+      if (activeProfileId) {
+        const modelProfiles = appStore.get(modelProfilesAtom)
+        const profile = modelProfiles.find(p => p.id === activeProfileId)
+        if (profile) {
+          customConfig = normalizeCustomClaudeConfig(profile.config)
+          profileApiFormat = profile.apiFormat
+          console.log(`[IPCChatTransport] Using active profile: ${profile.name} (${profile.apiFormat})`)
+        }
+      }
+    }
+
+    if (!customConfig) {
+      // Fall back to legacy custom config
+      const storedCustomConfig = appStore.get(customClaudeConfigAtom) as CustomClaudeConfig
+      customConfig = normalizeCustomClaudeConfig(storedCustomConfig)
+      if (customConfig) {
+        console.log(`[IPCChatTransport] Using legacy custom config`)
+      }
+    }
+
+    // Get the actual model identifier based on selection and profile config
+    const modelSelection = selectedModelId as "opus" | "sonnet" | "haiku" | undefined
+    const modelString = customConfig && modelSelection
+      ? getModelForSelection(customConfig, modelSelection)
+      : MODEL_ID_MAP[selectedModelId || "sonnet"]
 
     // Get selected Ollama model for offline mode
     const selectedOllamaModel = appStore.get(selectedOllamaModelAtom)

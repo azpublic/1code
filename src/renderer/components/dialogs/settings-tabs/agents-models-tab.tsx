@@ -1,25 +1,20 @@
 import { useAtom, useSetAtom } from "jotai"
-import { MoreHorizontal, Plus } from "lucide-react"
 import { useEffect, useState } from "react"
 import { toast } from "sonner"
 import {
+  activeProfileIdAtom,
   agentsSettingsDialogOpenAtom,
-  anthropicOnboardingCompletedAtom,
-  customClaudeConfigAtom,
+  appTaskProviderIdAtom,
+  modelProfilesAtom,
   openaiApiKeyAtom,
-  type CustomClaudeConfig,
+  defaultClaudeModelIdAtom,
 } from "../../../lib/atoms"
 import { trpc } from "../../../lib/trpc"
 import { Badge } from "../../ui/badge"
 import { Button } from "../../ui/button"
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuTrigger,
-} from "../../ui/dropdown-menu"
 import { Input } from "../../ui/input"
 import { Label } from "../../ui/label"
+import { ModelProfilesList } from "./model-profiles-list"
 
 // Hook to detect narrow screen
 function useIsNarrowScreen(): boolean {
@@ -38,228 +33,9 @@ function useIsNarrowScreen(): boolean {
   return isNarrow
 }
 
-const EMPTY_CONFIG: CustomClaudeConfig = {
-  model: "",
-  token: "",
-  baseUrl: "",
-}
-
-// Account row component
-function AccountRow({
-  account,
-  isActive,
-  onSetActive,
-  onRename,
-  onRemove,
-  isLoading,
-}: {
-  account: {
-    id: string
-    displayName: string | null
-    email: string | null
-    connectedAt: string | null
-  }
-  isActive: boolean
-  onSetActive: () => void
-  onRename: () => void
-  onRemove: () => void
-  isLoading: boolean
-}) {
-  return (
-    <div className="flex items-center justify-between p-3 hover:bg-muted/50">
-      <div className="flex items-center gap-3">
-        <div>
-          <div className="text-sm font-medium">
-            {account.displayName || "Anthropic Account"}
-          </div>
-          {account.email && (
-            <div className="text-xs text-muted-foreground">{account.email}</div>
-          )}
-          {!account.email && account.connectedAt && (
-            <div className="text-xs text-muted-foreground">
-              Connected{" "}
-              {new Date(account.connectedAt).toLocaleDateString(undefined, {
-                dateStyle: "short",
-              })}
-            </div>
-          )}
-        </div>
-      </div>
-
-      <div className="flex items-center gap-2">
-        {!isActive && (
-          <Button
-            size="sm"
-            variant="ghost"
-            onClick={onSetActive}
-            disabled={isLoading}
-          >
-            Switch
-          </Button>
-        )}
-        {isActive && (
-          <Badge variant="secondary" className="text-xs">
-            Active
-          </Badge>
-        )}
-        <DropdownMenu>
-          <DropdownMenuTrigger asChild>
-            <Button size="icon" variant="ghost" className="h-7 w-7">
-              <MoreHorizontal className="h-4 w-4" />
-            </Button>
-          </DropdownMenuTrigger>
-          <DropdownMenuContent align="end">
-            <DropdownMenuItem onClick={onRename}>Rename</DropdownMenuItem>
-            <DropdownMenuItem
-              className="data-[highlighted]:bg-red-500/15 data-[highlighted]:text-red-400"
-              onClick={onRemove}
-            >
-              Remove
-            </DropdownMenuItem>
-          </DropdownMenuContent>
-        </DropdownMenu>
-      </div>
-    </div>
-  )
-}
-
-// Anthropic accounts section component
-function AnthropicAccountsSection() {
-  const { data: accounts, isLoading: isAccountsLoading, refetch: refetchList } =
-    trpc.anthropicAccounts.list.useQuery(undefined, {
-      refetchOnMount: true,
-      staleTime: 0,
-    })
-  const { data: activeAccount, refetch: refetchActive } =
-    trpc.anthropicAccounts.getActive.useQuery(undefined, {
-      refetchOnMount: true,
-      staleTime: 0,
-    })
-  const { data: claudeCodeIntegration } = trpc.claudeCode.getIntegration.useQuery()
-  const trpcUtils = trpc.useUtils()
-
-  // Auto-migrate legacy account if needed
-  const migrateLegacy = trpc.anthropicAccounts.migrateLegacy.useMutation({
-    onSuccess: async () => {
-      await refetchList()
-      await refetchActive()
-    },
-  })
-
-  // Trigger migration if: no accounts, not loading, has legacy connection, not already migrating
-  useEffect(() => {
-    if (
-      !isAccountsLoading &&
-      accounts?.length === 0 &&
-      claudeCodeIntegration?.isConnected &&
-      !migrateLegacy.isPending &&
-      !migrateLegacy.isSuccess
-    ) {
-      migrateLegacy.mutate()
-    }
-  }, [isAccountsLoading, accounts, claudeCodeIntegration, migrateLegacy])
-
-  const setActiveMutation = trpc.anthropicAccounts.setActive.useMutation({
-    onSuccess: () => {
-      trpcUtils.anthropicAccounts.list.invalidate()
-      trpcUtils.anthropicAccounts.getActive.invalidate()
-      trpcUtils.claudeCode.getIntegration.invalidate()
-      toast.success("Account switched")
-    },
-    onError: (err) => {
-      toast.error(`Failed to switch account: ${err.message}`)
-    },
-  })
-
-  const renameMutation = trpc.anthropicAccounts.rename.useMutation({
-    onSuccess: () => {
-      trpcUtils.anthropicAccounts.list.invalidate()
-      trpcUtils.anthropicAccounts.getActive.invalidate()
-      toast.success("Account renamed")
-    },
-    onError: (err) => {
-      toast.error(`Failed to rename account: ${err.message}`)
-    },
-  })
-
-  const removeMutation = trpc.anthropicAccounts.remove.useMutation({
-    onSuccess: () => {
-      trpcUtils.anthropicAccounts.list.invalidate()
-      trpcUtils.anthropicAccounts.getActive.invalidate()
-      trpcUtils.claudeCode.getIntegration.invalidate()
-      toast.success("Account removed")
-    },
-    onError: (err) => {
-      toast.error(`Failed to remove account: ${err.message}`)
-    },
-  })
-
-  const handleRename = (accountId: string, currentName: string | null) => {
-    const newName = window.prompt(
-      "Enter new name for this account:",
-      currentName || "Anthropic Account"
-    )
-    if (newName && newName.trim()) {
-      renameMutation.mutate({ accountId, displayName: newName.trim() })
-    }
-  }
-
-  const handleRemove = (accountId: string, displayName: string | null) => {
-    const confirmed = window.confirm(
-      `Are you sure you want to remove "${displayName || "this account"}"? You will need to re-authenticate to use it again.`
-    )
-    if (confirmed) {
-      removeMutation.mutate({ accountId })
-    }
-  }
-
-  const isLoading =
-    setActiveMutation.isPending ||
-    renameMutation.isPending ||
-    removeMutation.isPending
-
-  // Don't show section if no accounts
-  if (!isAccountsLoading && (!accounts || accounts.length === 0)) {
-    return null
-  }
-
-  return (
-    <div className="bg-background rounded-lg border border-border overflow-hidden divide-y divide-border">
-        {isAccountsLoading ? (
-          <div className="p-4 text-center text-sm text-muted-foreground">
-            Loading accounts...
-          </div>
-        ) : (
-          accounts?.map((account) => (
-            <AccountRow
-              key={account.id}
-              account={account}
-              isActive={activeAccount?.id === account.id}
-              onSetActive={() => setActiveMutation.mutate({ accountId: account.id })}
-              onRename={() => handleRename(account.id, account.displayName)}
-              onRemove={() => handleRemove(account.id, account.displayName)}
-              isLoading={isLoading}
-            />
-          ))
-        )}
-    </div>
-  )
-}
-
 export function AgentsModelsTab() {
-  const [storedConfig, setStoredConfig] = useAtom(customClaudeConfigAtom)
-  const [model, setModel] = useState(storedConfig.model)
-  const [baseUrl, setBaseUrl] = useState(storedConfig.baseUrl)
-  const [token, setToken] = useState(storedConfig.token)
-  const setAnthropicOnboardingCompleted = useSetAtom(
-    anthropicOnboardingCompletedAtom,
-  )
   const setSettingsOpen = useSetAtom(agentsSettingsDialogOpenAtom)
   const isNarrowScreen = useIsNarrowScreen()
-  const disconnectClaudeCode = trpc.claudeCode.disconnect.useMutation()
-  const { data: claudeCodeIntegration, isLoading: isClaudeCodeLoading } =
-    trpc.claudeCode.getIntegration.useQuery()
-  const isClaudeCodeConnected = claudeCodeIntegration?.isConnected
 
   // OpenAI API key state
   const [storedOpenAIKey, setStoredOpenAIKey] = useAtom(openaiApiKeyAtom)
@@ -267,50 +43,55 @@ export function AgentsModelsTab() {
   const setOpenAIKeyMutation = trpc.voice.setOpenAIKey.useMutation()
   const trpcUtils = trpc.useUtils()
 
+  // Model profiles state
+  const [modelProfiles, setModelProfiles] = useAtom(modelProfilesAtom)
+  const [activeProfileId, setActiveProfileId] = useAtom(activeProfileIdAtom)
+  const [defaultClaudeModelId, setDefaultClaudeModelId] = useAtom(defaultClaudeModelIdAtom)
+  const [appTaskProviderId, setAppTaskProviderId] = useAtom(appTaskProviderIdAtom)
+
+  // Legacy config migration (one-time)
   useEffect(() => {
-    setModel(storedConfig.model)
-    setBaseUrl(storedConfig.baseUrl)
-    setToken(storedConfig.token)
-  }, [storedConfig.model, storedConfig.baseUrl, storedConfig.token])
+    const legacyKey = "agents:claude-custom-config"
+    const legacyConfigStr = localStorage.getItem(legacyKey)
+
+    if (legacyConfigStr) {
+      try {
+        const legacyConfig = JSON.parse(legacyConfigStr)
+        const { model, token, baseUrl } = legacyConfig
+
+        // Only migrate if config has meaningful values
+        if (model?.trim() && token?.trim() && baseUrl?.trim()) {
+          // Check if a profile with this config already exists
+          const exists = modelProfiles.some(
+            (p) =>
+              p.config.model === model &&
+              p.config.token === token &&
+              p.config.baseUrl === baseUrl
+          )
+
+          if (!exists) {
+            const migratedProfile: typeof modelProfiles extends (infer T)[] ? T : never = {
+              id: `profile-${Date.now()}`,
+              name: "Legacy Config",
+              apiFormat: baseUrl.includes("anthropic") ? "anthropic" : "openai",
+              config: { model, token, baseUrl },
+            }
+            setModelProfiles((prev) => [...prev, migratedProfile])
+            toast.success("Migrated legacy config to model profile")
+          }
+
+          // Clear legacy config after migration
+          localStorage.removeItem(legacyKey)
+        }
+      } catch (e) {
+        console.error("Failed to migrate legacy config:", e)
+      }
+    }
+  }, [modelProfiles, setModelProfiles])
 
   useEffect(() => {
     setOpenaiKey(storedOpenAIKey)
   }, [storedOpenAIKey])
-
-  const trimmedModel = model.trim()
-  const trimmedBaseUrl = baseUrl.trim()
-  const trimmedToken = token.trim()
-  const canSave = Boolean(trimmedModel && trimmedBaseUrl && trimmedToken)
-  const canReset = Boolean(trimmedModel || trimmedBaseUrl || trimmedToken)
-
-  const handleSave = () => {
-    if (!canSave) {
-      toast.error("Fill model, token, and base URL to save")
-      return
-    }
-    const nextConfig: CustomClaudeConfig = {
-      model: trimmedModel,
-      token: trimmedToken,
-      baseUrl: trimmedBaseUrl,
-    }
-
-    setStoredConfig(nextConfig)
-    toast.success("Model settings saved")
-  }
-
-  const handleReset = () => {
-    setStoredConfig(EMPTY_CONFIG)
-    setModel("")
-    setBaseUrl("")
-    setToken("")
-    toast.success("Model settings reset")
-  }
-
-  const handleClaudeCodeSetup = () => {
-    disconnectClaudeCode.mutate()
-    setSettingsOpen(false)
-    setAnthropicOnboardingCompleted(false)
-  }
 
   // OpenAI key handlers
   const trimmedOpenAIKey = openaiKey.trim()
@@ -346,6 +127,10 @@ export function AgentsModelsTab() {
     }
   }
 
+  // Filter profiles for different sections
+  const anthropicProfiles = modelProfiles.filter((p) => p.apiFormat === "anthropic")
+  const openaiProfiles = modelProfiles.filter((p) => p.apiFormat === "openai")
+
   return (
     <div className="p-6 space-y-6">
       {/* Header - hidden on narrow screens since it's in the navigation bar */}
@@ -353,108 +138,136 @@ export function AgentsModelsTab() {
         <div className="flex flex-col space-y-1.5 text-center sm:text-left">
           <h3 className="text-sm font-semibold text-foreground">Models</h3>
           <p className="text-xs text-muted-foreground">
-            Configure model overrides and Claude Code authentication
+            Configure AI model providers and API keys
           </p>
         </div>
       )}
 
-      {/* Anthropic Accounts Section */}
-      <div className="space-y-2">
-        <div className="pb-2 flex items-center justify-between">
-          <div>
-            <h4 className="text-sm font-medium text-foreground">
-              Anthropic Accounts
-            </h4>
-            <p className="text-xs text-muted-foreground">
-              Manage your Claude API accounts
-            </p>
-          </div>
-          <Button
-            size="sm"
-            variant="outline"
-            onClick={handleClaudeCodeSetup}
-            disabled={disconnectClaudeCode.isPending || isClaudeCodeLoading}
-          >
-            <Plus className="h-3 w-3 mr-1" />
-            {isClaudeCodeConnected ? "Add" : "Connect"}
-          </Button>
-        </div>
-
-        <AnthropicAccountsSection />
-      </div>
-
+      {/* Model Profiles Section */}
       <div className="space-y-2">
         <div className="pb-2">
           <h4 className="text-sm font-medium text-foreground">
-            Override Model
+            Model Profiles
           </h4>
+          <p className="text-xs text-muted-foreground">
+            Configure multiple AI providers (Anthropic or OpenAI-compatible)
+          </p>
+        </div>
+        <ModelProfilesList
+          activeProfileId={activeProfileId}
+          defaultClaudeModelId={defaultClaudeModelId}
+          onSetActive={setActiveProfileId}
+          onSetDefault={setDefaultClaudeModelId}
+        />
+      </div>
+
+      {/* Default Claude Model Section */}
+      {anthropicProfiles.length > 0 && (
+        <div className="space-y-2">
+          <div className="pb-2">
+            <h4 className="text-sm font-medium text-foreground">
+              Default Claude Model
+            </h4>
+            <p className="text-xs text-muted-foreground">
+              Select which Anthropic-format model to use for Claude SDK chat
+            </p>
+          </div>
+          <div className="bg-background rounded-lg border border-border overflow-hidden">
+            <div className="p-4 space-y-2">
+              <button
+                onClick={() => setDefaultClaudeModelId(null)}
+                className={`w-full flex items-center gap-3 p-2 rounded-md transition-colors ${
+                  !defaultClaudeModelId
+                    ? "bg-muted"
+                    : "hover:bg-muted/50"
+                }`}
+              >
+                <div className={`w-4 h-4 rounded-full border-2 flex items-center justify-center ${
+                  !defaultClaudeModelId
+                    ? "border-primary bg-primary"
+                    : "border-border"
+                }`}>
+                  {!defaultClaudeModelId && (
+                    <div className="w-1.5 h-1.5 rounded-full bg-white" />
+                  )}
+                </div>
+                <span className="text-sm">Use Claude Code default</span>
+              </button>
+              {anthropicProfiles.map((profile) => (
+                <button
+                  key={profile.id}
+                  onClick={() => setDefaultClaudeModelId(profile.id)}
+                  className={`w-full flex items-center gap-3 p-2 rounded-md transition-colors ${
+                    defaultClaudeModelId === profile.id
+                      ? "bg-muted"
+                      : "hover:bg-muted/50"
+                  }`}
+                >
+                  <div className={`w-4 h-4 rounded-full border-2 flex items-center justify-center ${
+                    defaultClaudeModelId === profile.id
+                      ? "border-primary bg-primary"
+                      : "border-border"
+                  }`}>
+                    {defaultClaudeModelId === profile.id && (
+                      <div className="w-1.5 h-1.5 rounded-full bg-white" />
+                    )}
+                  </div>
+                  <div className="flex-1 text-left">
+                    <div className="flex items-center gap-2">
+                      <span className="text-sm">{profile.name}</span>
+                      <Badge variant="secondary" className="text-xs">
+                        Anthropic
+                      </Badge>
+                    </div>
+                    <div className="text-xs text-muted-foreground">{profile.config.model}</div>
+                  </div>
+                </button>
+              ))}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* APP TASK AI Provider Section */}
+      <div className="space-y-2">
+        <div className="pb-2">
+          <h4 className="text-sm font-medium text-foreground">
+            App Task AI Provider
+          </h4>
+          <p className="text-xs text-muted-foreground">
+            Model used for generating chat names and commit messages (OpenAI-compatible only)
+          </p>
         </div>
         <div className="bg-background rounded-lg border border-border overflow-hidden">
-          <div className="p-4 space-y-6">
-
-          <div className="flex items-center justify-between gap-6">
-            <div className="flex-1">
-              <Label className="text-sm font-medium">Model name</Label>
-              <p className="text-xs text-muted-foreground">
-                Model identifier to use for requests
+          <div className="p-4">
+            {openaiProfiles.length === 0 ? (
+              <p className="text-sm text-muted-foreground">
+                No OpenAI-compatible models configured. Add an OpenAI-format model profile above.
               </p>
-            </div>
-            <div className="flex-shrink-0 w-80">
-              <Input
-                value={model}
-                onChange={(e) => setModel(e.target.value)}
-                className="w-full"
-                placeholder="claude-3-7-sonnet-20250219"
-              />
-            </div>
+            ) : (
+              <>
+                <select
+                  value={appTaskProviderId || ""}
+                  onChange={(e) => setAppTaskProviderId(e.target.value || null)}
+                  className="w-full h-9 px-3 rounded-md border border-input bg-background text-sm shadow-sm transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-50"
+                >
+                  <option value="">Use Active Profile (if OpenAI-compatible)</option>
+                  {openaiProfiles.map((profile) => (
+                    <option key={profile.id} value={profile.id}>
+                      {profile.name}
+                    </option>
+                  ))}
+                </select>
+                <p className="text-xs text-muted-foreground mt-2">
+                  {appTaskProviderId
+                    ? `Using: ${modelProfiles.find(p => p.id === appTaskProviderId)?.name || "Unknown"} (OpenAI)`
+                    : activeProfileId && modelProfiles.find(p => p.id === activeProfileId)?.apiFormat === "openai"
+                      ? `Using active profile: ${modelProfiles.find(p => p.id === activeProfileId)?.name || "Unknown"}`
+                      : "Using the currently active profile (must be OpenAI-compatible)"}
+                </p>
+              </>
+            )}
           </div>
-
-          <div className="flex items-center justify-between gap-6">
-            <div className="flex-1">
-              <Label className="text-sm font-medium">API token</Label>
-              <p className="text-xs text-muted-foreground">
-                ANTHROPIC_AUTH_TOKEN env
-              </p>
-            </div>
-            <div className="flex-shrink-0 w-80">
-              <Input
-                type="password"
-                value={token}
-                onChange={(e) => {
-                  setToken(e.target.value)
-                }}
-                className="w-full"
-                placeholder="sk-ant-..."
-              />
-            </div>
-          </div>
-
-          <div className="flex items-center justify-between gap-6">
-            <div className="flex-1">
-              <Label className="text-sm font-medium">Base URL</Label>
-              <p className="text-xs text-muted-foreground">
-                ANTHROPIC_BASE_URL env
-              </p>
-            </div>
-            <div className="flex-shrink-0 w-80">
-              <Input
-                value={baseUrl}
-                onChange={(e) => setBaseUrl(e.target.value)}
-                className="w-full"
-                placeholder="https://api.anthropic.com"
-              />
-            </div>
-          </div>
-        </div>
-
-        <div className="bg-muted p-3 rounded-b-lg flex justify-end gap-2 border-t">
-          <Button variant="ghost" size="sm" onClick={handleReset} disabled={!canReset} className="hover:bg-red-500/10 hover:text-red-600">
-            Reset
-          </Button>
-          <Button size="sm" onClick={handleSave} disabled={!canSave}>
-            Save
-          </Button>
-        </div>
         </div>
       </div>
 

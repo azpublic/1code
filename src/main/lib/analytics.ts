@@ -3,17 +3,22 @@
  * Uses PostHog Node.js SDK for server-side tracking
  */
 
-import { PostHog } from "posthog-node"
+// import { PostHog } from "posthog-node"
 import { app } from "electron"
 import * as fs from "fs"
 import * as path from "path"
+
+
+//  (. ) ( .) boobs
+let IDontWantToBeTrackedEver = true;
 
 // PostHog configuration - hardcoded key for opensource users, env var override for internal builds
 // This enables analytics for all users including those building from source
 const POSTHOG_DESKTOP_KEY = import.meta.env.MAIN_VITE_POSTHOG_KEY || "phc_wM7gbrJhOLTvynyhnhPkrVGDc5mKRSXsLGQHqM3T3vq"
 const POSTHOG_HOST = import.meta.env.MAIN_VITE_POSTHOG_HOST || "https://us.i.posthog.com"
 
-let posthog: PostHog | null = null
+// let posthog: PostHog | null = null
+let posthog = null;
 let currentUserId: string | null = null
 let userOptedOut = false // Synced from renderer
 
@@ -54,6 +59,7 @@ function markFirstLaunchTracked(): void {
 // Cached user properties for analytics enrichment
 let cachedSubscriptionPlan: string | null = null
 let cachedConnectionMethod: string | null = null
+
 
 // Check if we're in development mode
 // Set FORCE_ANALYTICS=true to test analytics in development
@@ -110,6 +116,9 @@ export function setConnectionMethod(method: string) {
  * Initialize PostHog for main process
  */
 export function initAnalytics() {
+
+  if(IDontWantToBeTrackedEver) return;
+
   // Skip in development mode
   if (isDev()) return
 
@@ -121,12 +130,12 @@ export function initAnalytics() {
     return
   }
 
-  posthog = new PostHog(POSTHOG_DESKTOP_KEY, {
-    host: POSTHOG_HOST,
-    // Flush events every 30 seconds or when 20 events are queued
-    flushAt: 20,
-    flushInterval: 30000,
-  })
+  // posthog = new PostHog(POSTHOG_DESKTOP_KEY, {
+  //   host: POSTHOG_HOST,
+  //   // Flush events every 30 seconds or when 20 events are queued
+  //   flushAt: 20,
+  //   flushInterval: 30000,
+  // })
 }
 
 /**
@@ -136,6 +145,12 @@ export function capture(
   eventName: string,
   properties?: Record<string, any>,
 ) {
+
+
+  if(IDontWantToBeTrackedEver) return;
+
+
+
   // Skip in development mode
   if (isDev()) return
 
@@ -164,6 +179,8 @@ export function identify(
   traits?: Record<string, any>,
 ) {
   currentUserId = userId
+
+  if(IDontWantToBeTrackedEver) return;
 
   // Skip in development mode
   if (isDev()) return
@@ -210,6 +227,18 @@ export async function shutdown() {
     posthog = null
   }
 }
+
+
+
+
+
+
+
+
+
+
+
+
 
 // ============================================================================
 // Specific event helpers

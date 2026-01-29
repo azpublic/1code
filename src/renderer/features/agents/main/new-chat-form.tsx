@@ -44,9 +44,16 @@ import {
   getNextMode,
   type AgentMode,
 } from "../atoms"
-import { defaultAgentModeAtom } from "../../../lib/atoms"
+import {
+  activeProfileIdAtom,
+  defaultAgentModeAtom,
+  getModelDisplayName,
+  modelProfilesAtom,
+} from "../../../lib/atoms"
+import { appStore } from "../../../lib/jotai-store"
 import { ProjectSelector } from "../components/project-selector"
 import { WorkModeSelector } from "../components/work-mode-selector"
+import { ModelSelector } from "../components/model-selector"
 // import { selectedTeamIdAtom } from "@/lib/atoms/team"
 import { atom } from "jotai"
 const selectedTeamIdAtom = atom<string | null>(null)
@@ -110,6 +117,7 @@ import {
   type DraftProject,
 } from "../lib/drafts"
 import { CLAUDE_MODELS } from "../lib/models"
+import {executeCoseBilkentLayout} from "mermaid/dist/rendering-util/layout-algorithms/cose-bilkent/layout";
 // import type { PlanType } from "@/lib/config/subscription-plans"
 type PlanType = string
 
@@ -128,7 +136,31 @@ function useAvailableModels() {
     enabled: showOfflineFeatures, // Only query Ollama when offline mode is enabled
   })
 
-  const baseModels = CLAUDE_MODELS
+  // Get active profile to use custom model names
+  const activeProfileId = useAtomValue(activeProfileIdAtom)
+  const modelProfiles = useAtomValue(modelProfilesAtom)
+
+  // Check if active profile is Anthropic-style with custom models
+  const activeProfile = activeProfileId
+    ? modelProfiles.find(p => p.id === activeProfileId)
+    : null
+
+  // Get models with custom names from profile if available
+  const getModels = () => {
+    if (activeProfile?.apiFormat === "anthropic") {
+      // Map base models to use custom display names from profile
+      return CLAUDE_MODELS.map(model => {
+        const customDisplayName = getModelDisplayName(activeProfile.config, model.id as "opus" | "sonnet" | "haiku")
+        return {
+          ...model,
+          name: customDisplayName,
+        }
+      })
+    }
+    return CLAUDE_MODELS
+  }
+
+  const baseModels = getModels()
 
   const isOffline = ollamaStatus ? !ollamaStatus.internet.online : false
   const hasOllama = ollamaStatus?.ollama.available && (ollamaStatus.ollama.models?.length ?? 0) > 0
@@ -214,12 +246,15 @@ export function NewChatForm({
       setSelectedProject(null)
     }
   }, [selectedProject, projectsList, validatedProject, setSelectedProject])
+
   const [lastSelectedAgentId, setLastSelectedAgentId] = useAtom(
     lastSelectedAgentIdAtom,
   )
+
   const [lastSelectedModelId, setLastSelectedModelId] = useAtom(
     lastSelectedModelIdAtom,
   )
+
   // Mode for new chat - uses user's default preference directly
   // Note: defaultAgentMode is initialized synchronously via atomWithStorage with getOnInit: true
   const defaultAgentMode = useAtomValue(defaultAgentModeAtom)
@@ -239,6 +274,11 @@ export function NewChatForm({
   const setJustCreatedIds = useSetAtom(justCreatedIdsAtom)
   const [repoSearchQuery, setRepoSearchQuery] = useState("")
   const [createBranchDialogOpen, setCreateBranchDialogOpen] = useState(false)
+
+  // Model provider selection for this chat (null = use active profile)
+  const [selectedModelProviderId, setSelectedModelProviderId] = useState<string | null>(null)
+
+
 
   // Worktree config banner state
   const [worktreeBannerDismissed, setWorktreeBannerDismissed] = useState(() => {
@@ -269,6 +309,7 @@ export function NewChatForm({
     } catch {}
   }
 
+
   const handleConfigureWorktree = () => {
     // Open the project-specific worktree settings tab
     if (validatedProject?.id) {
@@ -276,6 +317,7 @@ export function NewChatForm({
       setSettingsDialogOpen(true)
     }
   }
+
   // Parse owner/repo from GitHub URL
   const parseGitHubUrl = (url: string) => {
     const match = url.match(/(?:github\.com\/)?([^\/]+)\/([^\/\s#?]+)/)
@@ -294,6 +336,13 @@ export function NewChatForm({
     () =>
       availableModels.models.find((m) => m.id === lastSelectedModelId) || availableModels.models[1],
   )
+
+  console.log("[NewChatForm] selectedModel = " , selectedModel);
+  console.log("[NewChatForm] availableModels = " , availableModels);
+  console.log("[NewChatForm] selectedModelProviderId = " , selectedModelProviderId);
+  console.log("[NewChatForm] lastSelectedModelId = " , lastSelectedModelId);
+  console.log( " [NewChatForm] lastSelectedAgentId = " , lastSelectedAgentId);
+
 
   // Determine current Ollama model (selected or recommended)
   const currentOllamaModel = selectedOllamaModel || availableModels.recommendedModel || availableModels.ollamaModels[0]
@@ -901,6 +950,7 @@ export function NewChatForm({
       }
     },
     onError: (error) => {
+      console.error("Error while creating chat ", error.message);
       toast.error(error.message)
     },
   })
@@ -1069,6 +1119,19 @@ export function NewChatForm({
     }
 
     // Create chat with selected project, branch, and initial message
+    // Log the model provider being used for this workspace
+    const modelProfiles = appStore.get(modelProfilesAtom);
+    const selectedProfile = selectedModelProviderId
+      ? modelProfiles.find(p => p.id === selectedModelProviderId)
+      : null;
+
+    console.log("[NewChat] ===== CREATING NEW WORKSPACE =====");
+    console.log("[NewChat] Project:", selectedProject.name);
+    console.log("[NewChat] Mode:", agentMode);
+    console.log("[NewChat] Model Provider ID:", selectedModelProviderId || "not set (will use active profile)");
+    console.log("[NewChat] Model Provider:", selectedProfile ? `${selectedProfile.name} (${selectedProfile.apiFormat})` : "None (will use active profile)");
+    console.log("[NewChat] =======================================");
+
     createChatMutation.mutate({
       projectId: selectedProject.id,
       name: message.trim().slice(0, 50), // Use first 50 chars as chat name
@@ -1079,6 +1142,7 @@ export function NewChatForm({
         workMode === "worktree" ? selectedBranchType : undefined,
       useWorktree: workMode === "worktree",
       mode: agentMode,
+      modelProviderId: selectedModelProviderId,
     })
     // Editor, images, and pasted texts are cleared in onSuccess callback
   }, [
@@ -2057,6 +2121,15 @@ export function NewChatForm({
                       onBranchCreated={(branchName) => {
                         setSelectedBranch(branchName, "local")
                       }}
+                    />
+                  )}
+
+                  {/* Model selector - visible when project is selected */}
+                  {validatedProject && (
+                    <ModelSelector
+                      value={selectedModelProviderId}
+                      onChange={setSelectedModelProviderId}
+                      disabled={createChatMutation.isPending}
                     />
                   )}
                 </div>

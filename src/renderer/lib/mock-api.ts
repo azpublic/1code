@@ -216,8 +216,20 @@ export const api = {
       useMutation: () => {
         const mutation = trpc.chats.generateSubChatName.useMutation()
         return {
-          mutateAsync: async (args: { userMessage: string; ollamaModel?: string | null }) => {
-            return mutation.mutateAsync({ userMessage: args.userMessage, ollamaModel: args.ollamaModel })
+          mutateAsync: async (args: {
+            userMessage: string;
+            providerId?: string;
+            apiFormat?: string;
+            model?: string;
+            token?: string;
+            baseUrl?: string;
+            ollamaModel?: string | null;
+            offlineModeEnabled?: boolean;
+            projectId?: string;
+            hasToken?: boolean;
+          }) => {
+            console.log("mock-api.ts generateSubChatName in useMutation mutateAsync ");
+            return mutation.mutateAsync(args)
           },
           isPending: mutation.isPending,
         }

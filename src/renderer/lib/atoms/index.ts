@@ -204,17 +204,76 @@ export const agentsSettingsDialogActiveTabAtom = atom<SettingsTab>("profile")
 export const agentsSettingsDialogOpenAtom = atom<boolean>(false)
 
 export type CustomClaudeConfig = {
-  model: string
+  // For OpenAI-style: single model identifier
+  model?: string
+
+  // For Anthropic-style: 3 models with their display names
+  // These map to ANTHROPIC_DEFAULT_HAIKU_MODEL, ANTHROPIC_DEFAULT_SONNET_MODEL, ANTHROPIC_DEFAULT_OPUS_MODEL
+  haikuModel?: string
+  haikuDisplayName?: string  // Display name shown in UI (e.g., "Haiku 3.5")
+  sonnetModel?: string
+  sonnetDisplayName?: string
+  opusModel?: string
+  opusDisplayName?: string
+
   token: string
   baseUrl: string
 }
 
+/**
+ * Get the actual model identifier for a given model selection
+ * Handles profile-specific model names for Anthropic-style APIs
+ */
+export function getModelForSelection(
+  config: CustomClaudeConfig | undefined,
+  selection: "opus" | "sonnet" | "haiku"
+): string {
+  if (!config) return "claude-3-5-sonnet-20241022" // Default fallback
+
+  // For Anthropic-style profiles with custom models
+  if (selection === "opus" && config.opusModel) return config.opusModel
+  if (selection === "sonnet" && config.sonnetModel) return config.sonnetModel
+  if (selection === "haiku" && config.haikuModel) return config.haikuModel
+
+  // Fallback to single model field (for OpenAI-style or legacy Anthropic)
+  if (config.model) return config.model
+
+  // Final fallback to Claude defaults
+  const defaults = {
+    opus: "claude-3-5-sonnet-20250107",
+    sonnet: "claude-3-5-sonnet-20241022",
+    haiku: "claude-3-5-haiku-20241022",
+  }
+  return defaults[selection] || defaults.sonnet
+}
+
+/**
+ * Get the display name for a model selection
+ * Returns the custom display name if set, otherwise returns the default name
+ */
+export function getModelDisplayName(
+  config: CustomClaudeConfig | undefined,
+  selection: "opus" | "sonnet" | "haiku"
+): string {
+  if (!config) return selection === "opus" ? "Opus" : selection === "sonnet" ? "Sonnet" : "Haiku"
+
+  if (selection === "opus" && config.opusDisplayName) return config.opusDisplayName
+  if (selection === "sonnet" && config.sonnetDisplayName) return config.sonnetDisplayName
+  if (selection === "haiku" && config.haikuDisplayName) return config.haikuDisplayName
+
+  // Fallback to default names
+  return selection === "opus" ? "Opus" : selection === "sonnet" ? "Sonnet" : "Haiku"
+}
+
 // Model profile system - support multiple configs
+export type ApiFormat = "anthropic" | "openai"
+
 export type ModelProfile = {
   id: string
   name: string
+  apiFormat: ApiFormat // API format to use (Anthropic or OpenAI-style)
   config: CustomClaudeConfig
-  isOffline?: boolean // Mark as offline/Ollama profile
+  isOffline?: boolean // Mark as offline/Ollama profile (always uses OpenAI format)
 }
 
 // Selected Ollama model for offline mode
@@ -229,6 +288,7 @@ export const selectedOllamaModelAtom = atomWithStorage<string | null>(
 export const getOfflineProfile = (modelName?: string | null): ModelProfile => ({
   id: 'offline-ollama',
   name: 'Offline (Ollama)',
+  apiFormat: 'openai', // Ollama uses OpenAI-compatible API
   isOffline: true,
   config: {
     model: modelName || 'qwen2.5-coder:7b',
@@ -241,6 +301,7 @@ export const getOfflineProfile = (modelName?: string | null): ModelProfile => ({
 export const OFFLINE_PROFILE: ModelProfile = {
   id: 'offline-ollama',
   name: 'Offline (Ollama)',
+  apiFormat: 'openai', // Ollama uses OpenAI-compatible API
   isOffline: true,
   config: {
     model: 'qwen2.5-coder:7b',
@@ -285,6 +346,24 @@ export const activeProfileIdAtom = atomWithStorage<string | null>(
   { getOnInit: true },
 )
 
+// App Task AI Provider ID (null = use active profile)
+// Used for chat name generation and commit message generation
+export const appTaskProviderIdAtom = atomWithStorage<string | null>(
+  "agents:app-task-provider-id",
+  null, // null = use active profile
+  undefined,
+  { getOnInit: true },
+)
+
+// Default Claude Model ID (null = use Claude Code default)
+// Used for selecting which Anthropic-format model is the default for Claude SDK chat
+export const defaultClaudeModelIdAtom = atomWithStorage<string | null>(
+  "agents:default-claude-model-id",
+  null,
+  undefined,
+  { getOnInit: true },
+)
+
 // Auto-fallback to offline mode when internet is unavailable
 export const autoOfflineModeAtom = atomWithStorage<boolean>(
   "agents:auto-offline-mode",
@@ -323,13 +402,35 @@ export const networkOnlineAtom = atom<boolean>(true)
 export function normalizeCustomClaudeConfig(
   config: CustomClaudeConfig,
 ): CustomClaudeConfig | undefined {
-  const model = config.model.trim()
   const token = config.token.trim()
   const baseUrl = config.baseUrl.trim()
 
-  if (!model || !token || !baseUrl) return undefined
+  // Check if we have at least one model field set
+  const model = config.model?.trim()
+  const haikuModel = config.haikuModel?.trim()
+  const sonnetModel = config.sonnetModel?.trim()
+  const opusModel = config.opusModel?.trim()
+  const haikuDisplayName = config.haikuDisplayName?.trim()
+  const sonnetDisplayName = config.sonnetDisplayName?.trim()
+  const opusDisplayName = config.opusDisplayName?.trim()
 
-  return { model, token, baseUrl }
+  // For OpenAI-style: require single model field
+  // For Anthropic-style: check if any of the 3 model fields are set
+  const hasModel = model || haikuModel || sonnetModel || opusModel
+
+  if (!hasModel || !token || !baseUrl) return undefined
+
+  return {
+    ...(model && { model }),
+    ...(haikuModel && { haikuModel }),
+    ...(haikuDisplayName && { haikuDisplayName }),
+    ...(sonnetModel && { sonnetModel }),
+    ...(sonnetDisplayName && { sonnetDisplayName }),
+    ...(opusModel && { opusModel }),
+    ...(opusDisplayName && { opusDisplayName }),
+    token,
+    baseUrl,
+  }
 }
 
 // Get active config (considering network status and auto-fallback)

@@ -3,14 +3,13 @@ import * as fs from "fs/promises"
 import * as path from "path"
 import simpleGit from "simple-git"
 import { z } from "zod"
-import { getAuthManager } from "../../../index"
 import {
   trackPRCreated,
   trackWorkspaceArchived,
   trackWorkspaceCreated,
   trackWorkspaceDeleted,
 } from "../../analytics"
-import { chats, getDatabase, projects, subChats } from "../../db"
+import { chats, claudeCodeCredentials, getDatabase, projects, subChats } from "../../db"
 import {
   createWorktreeForChat,
   fetchGitHubPRStatus,
@@ -22,9 +21,15 @@ import { computeContentHash, gitCache } from "../../git/cache"
 import { splitUnifiedDiffByFile } from "../../git/diff-parser"
 import { execWithShellEnv } from "../../git/shell-env"
 import { applyRollbackStash } from "../../git/stash"
-import { checkInternetConnection, checkOllamaStatus } from "../../ollama"
+import { checkOllamaStatus } from "../../ollama"
 import { terminalManager } from "../../terminal/manager"
 import { publicProcedure, router } from "../index"
+import {
+  buildClaudeEnv,
+  checkOfflineFallback,
+  getBundledClaudeBinaryPath,
+} from "../../claude"
+import { openAIChatCompletion } from "../../openai-chat"
 
 // Fallback to truncated user message if AI generation fails
 function getFallbackName(userMessage: string): string {
@@ -408,10 +413,16 @@ export const chatsRouter = router({
         branchType: z.enum(["local", "remote"]).optional(), // Whether baseBranch is local or remote
         useWorktree: z.boolean().default(true), // If false, work directly in project dir
         mode: z.enum(["plan", "agent"]).default("agent"),
+        modelProviderId: z.string().nullish(), // Model provider to use for this chat (null = use active profile)
       }),
     )
     .mutation(async ({ input }) => {
+
+
       console.log("[chats.create] called with:", input)
+      console.log("[chats.create] Model Provider ID for chat:", input.modelProviderId || "not set (will use active profile)")
+
+
       const db = getDatabase()
 
       // Get project path
@@ -419,7 +430,9 @@ export const chatsRouter = router({
         .select()
         .from(projects)
         .where(eq(projects.id, input.projectId))
-        .get()
+        .get();
+
+
       console.log("[chats.create] found project:", project)
       if (!project) throw new Error("Project not found")
 
@@ -439,7 +452,11 @@ export const chatsRouter = router({
       // Create chat (fast path)
       const chat = db
         .insert(chats)
-        .values({ name: input.name, projectId: input.projectId })
+        .values({
+          name: input.name,
+          projectId: input.projectId,
+          modelProviderId: input.modelProviderId,
+        })
         .returning()
         .get()
       console.log("[chats.create] created chat:", chat)
@@ -514,7 +531,7 @@ export const chatsRouter = router({
           worktreeResult = {
             worktreePath: result.worktreePath,
             branch: result.branch,
-            baseBranch: result.baseBranch,
+            baseBranch: result.baseBranch
           }
         } else {
           console.warn(`[Worktree] Failed: ${result.error}`)
@@ -1110,13 +1127,25 @@ export const chatsRouter = router({
    * Generate a commit message using AI based on the diff
    * @param chatId - The chat ID to get worktree path from
    * @param filePaths - Optional list of file paths to generate message for (if not provided, uses all changed files)
+   * @param providerId - Optional model profile ID to use (if not provided, uses appTaskProviderIdAtom or active profile)
+   * @param apiFormat - API format to use ("anthropic" or "openai") - must be provided if using custom model
+   * @param model - Model name to use
+   * @param token - API token for authentication
+   * @param baseUrl - Base URL for API requests
    * @param ollamaModel - Optional Ollama model for offline generation
+   * @param offlineModeEnabled - Whether offline mode (Ollama) is enabled in settings
    */
   generateCommitMessage: publicProcedure
     .input(z.object({
       chatId: z.string(),
       filePaths: z.array(z.string()).optional(),
+      providerId: z.string().optional(),
+      apiFormat: z.enum(["anthropic", "openai"]).optional(),
+      model: z.string().optional(),
+      token: z.string().optional(),
+      baseUrl: z.string().optional(),
       ollamaModel: z.string().nullish(), // Optional model for offline mode
+      offlineModeEnabled: z.boolean().optional(), // Whether offline mode is enabled in settings
     }))
     .mutation(async ({ input }) => {
       const db = getDatabase()
@@ -1164,11 +1193,67 @@ export const chatsRouter = router({
       const additions = files.reduce((sum, f) => sum + f.additions, 0)
       const deletions = files.reduce((sum, f) => sum + f.deletions, 0)
 
-      // Check internet first - if offline, use Ollama
-      const hasInternet = await checkInternetConnection()
+      // If OpenAI-style API config provided, use it directly
+      if (input.apiFormat === "openai" && input.model && input.token && input.baseUrl) {
+        console.log("[generateCommitMessage] Using OpenAI-style API for commit message generation")
+        try {
+          const message = await openAIChatCompletion({
+            prompt: `Generate a concise conventional commit message for these changes.
 
-      if (!hasInternet) {
-        console.log("[generateCommitMessage] Offline - trying Ollama...")
+Changes: ${files.length} files, +${additions}/-${deletions} lines
+
+Diff (truncated):
+${filteredDiff.slice(0, 5000)}
+
+Guidelines:
+- Use format: type: short description
+- Types: feat (new feature), fix (bug fix), docs, style, refactor, test, chore
+- Keep the description short and specific
+- Only output the commit message, nothing else
+
+Commit message:`,
+            model: input.model,
+            apiKey: input.token,
+            baseUrl: input.baseUrl,
+            maxTokens: 1000, // Increased for reasoning models like z.ai glm-4.7
+            temperature: 0.3,
+          })
+          console.log("[generateCommitMessage] Generated via OpenAI-style API:", message)
+          return { message }
+        } catch (error) {
+          console.log("[generateCommitMessage] OpenAI-style API failed:", error)
+          // Fall through to other methods below
+        }
+      }
+
+      // Get Claude Code credentials for SDK
+      const cred = db
+        .select()
+        .from(claudeCodeCredentials)
+        .where(eq(claudeCodeCredentials.id, "default"))
+        .get()
+      const claudeCodeToken = cred?.oauthToken || null
+
+      // Build custom config for offline fallback check (legacy support)
+      const customConfig = (input.model && input.token && input.baseUrl)
+        ? { model: input.model, token: input.token, baseUrl: input.baseUrl }
+        : undefined
+
+      // Check if we should use offline fallback (Ollama)
+      const offlineResult = await checkOfflineFallback(
+        customConfig,
+        claudeCodeToken,
+        input.ollamaModel,
+        input.offlineModeEnabled ?? true // default to true
+      )
+
+      // If offline fallback determined we should use Ollama, use it
+      if (offlineResult.isUsingOllama || offlineResult.error) {
+        if (offlineResult.error) {
+          console.log("[generateCommitMessage] Offline check error:", offlineResult.error)
+        } else {
+          console.log("[generateCommitMessage] Using Ollama for commit message generation")
+        }
         const ollamaMessage = await generateCommitMessageWithOllama(
           filteredDiff,
           files.length,
@@ -1182,53 +1267,71 @@ export const chatsRouter = router({
         }
         console.log("[generateCommitMessage] Ollama failed, using heuristic fallback")
         // Fall through to heuristic fallback below
-      } else {
-        // Online - call web API to generate commit message
-        let apiError: string | null = null
+      } else if (claudeCodeToken) {
+        // Use Claude Code SDK for commit message generation
+        console.log("[generateCommitMessage] Using Claude Code SDK for commit message generation")
         try {
-          const authManager = getAuthManager()
-          const token = await authManager.getValidToken()
-          // Use localhost in dev, production otherwise
-          const apiUrl = process.env.NODE_ENV === "development" ? "http://localhost:3000" : "https://21st.dev"
+          const sdk = await import("@anthropic-ai/claude-agent-sdk")
+          const claudeQuery = sdk.query
 
-          if (!token) {
-            apiError = "No auth token available"
-          } else {
-            const response = await fetch(
-              `${apiUrl}/api/agents/generate-commit-message`,
-              {
-                method: "POST",
-                headers: {
-                  "Content-Type": "application/json",
-                  "X-Desktop-Token": token,
-                },
-                body: JSON.stringify({
-                  diff: filteredDiff.slice(0, 10000), // Limit diff size, use filtered diff
-                  fileCount: files.length,
-                  additions,
-                  deletions,
-                }),
-              },
-            )
+          const prompt = `Generate a concise conventional commit message for these changes.
 
-            if (response.ok) {
-              const data = await response.json()
-              if (data.message) {
-                return { message: data.message }
-              }
-              apiError = "API returned ok but no message in response"
-            } else {
-              apiError = `API returned ${response.status}`
+Changes: ${files.length} files, +${additions}/-${deletions} lines
+
+Diff (truncated):
+${filteredDiff.slice(0, 5000)}
+
+Guidelines:
+- Use format: type: short description
+- Types: feat (new feature), fix (bug fix), docs, style, refactor, test, chore
+- Keep the description short and specific
+- Only output the commit message, nothing else
+
+Commit message:`
+
+          const stream = claudeQuery({
+            prompt,
+            options: {
+              cwd: chat.worktreePath,
+              systemPrompt: { type: "preset", preset: "claude_code" },
+              env: buildClaudeEnv(),
+              permissionMode: "bypassPermissions",
+              allowDangerouslySkipPermissions: true,
+              pathToClaudeCodeExecutable: getBundledClaudeBinaryPath(),
+              continue: true,
+            },
+          })
+
+          // Extract the text response from the stream
+          for await (const msg of stream) {
+            if ((msg as any).type === "text") {
+              const message = (msg as any).text?.trim() || ""
+              console.log("[generateCommitMessage] Generated via Claude Code SDK:", message)
+              return { message }
             }
           }
-        } catch (error) {
-          apiError = `API call failed: ${error instanceof Error ? error.message : String(error)}`
+        } catch (sdkError) {
+          console.log("[generateCommitMessage] Claude Code SDK failed, trying Ollama:", sdkError)
+          // Fall through to Ollama below
         }
-
-        if (apiError) {
-          console.log("[generateCommitMessage] API error:", apiError)
-        }
+      } else {
+        console.log("[generateCommitMessage] No Claude Code token, trying Ollama...")
       }
+
+      // Fallback: Try Ollama if SDK failed or no token
+      const ollamaMessage = await generateCommitMessageWithOllama(
+        filteredDiff,
+        files.length,
+        additions,
+        deletions,
+        input.ollamaModel
+      )
+      if (ollamaMessage) {
+        console.log("[generateCommitMessage] Generated via Ollama:", ollamaMessage)
+        return { message: ollamaMessage }
+      }
+      console.log("[generateCommitMessage] Ollama failed, using heuristic fallback")
+      // Fall through to heuristic fallback below
 
       // Fallback: Generate commit message with conventional commits style
       const fileNames = files.map((f) => {
@@ -1288,20 +1391,108 @@ export const chatsRouter = router({
 
   /**
    * Generate a name for a sub-chat using AI
-   * Uses Ollama when offline, otherwise calls web API
+   * Uses Claude Code SDK as primary, Ollama as offline fallback
+   * @param userMessage - The user's message to generate a name from
+   * @param providerId - Optional model profile ID to use (if not provided, uses appTaskProviderIdAtom or active profile)
+   * @param apiFormat - API format to use ("anthropic" or "openai") - must be provided if using custom model
+   * @param model - Model name to use
+   * @param token - API token for authentication
+   * @param baseUrl - Base URL for API requests
+   * @param ollamaModel - Optional Ollama model for offline generation
+   * @param offlineModeEnabled - Whether offline mode (Ollama) is enabled in settings
+   * @param projectId - Optional project ID for SDK context
    */
   generateSubChatName: publicProcedure
     .input(z.object({
       userMessage: z.string(),
+      providerId: z.string().optional(),
+      apiFormat: z.string().optional(),
+      model: z.string().optional(),
+      token: z.string().optional(),
+      baseUrl: z.string().optional(),
       ollamaModel: z.string().nullish(), // Optional model for offline mode
+      offlineModeEnabled: z.boolean().optional(), // Whether offline mode is enabled in settings
+      projectId: z.string().optional(), // Optional project ID for SDK context
+      hasToken: z.boolean().optional(),
     }))
     .mutation(async ({ input }) => {
+      console.log("[generateSubChatName] chats.ts generateSubChatName mutation ===== RAW INPUT =====")
+      console.log("[generateSubChatName] Full input object:", JSON.stringify(input, null, 2))
+      console.log("[generateSubChatName] ===== APP TASK AI CONFIG =====")
+      console.log("[generateSubChatName] apiFormat:", input.apiFormat || "not set")
+      console.log("[generateSubChatName] model:", input.model || "not set")
+      console.log("[generateSubChatName] hasToken:", !!input.token || input.hasToken)
+      console.log("[generateSubChatName] baseUrl:", input.baseUrl || "not set")
+      console.log("[generateSubChatName] =========================================")
       try {
-        // Check internet first - if offline, use Ollama
-        const hasInternet = await checkInternetConnection()
+        const db = getDatabase()
 
-        if (!hasInternet) {
-          console.log("[generateSubChatName] Offline - trying Ollama...")
+        // Get Claude Code credentials for SDK
+        const cred = db
+          .select()
+          .from(claudeCodeCredentials)
+          .where(eq(claudeCodeCredentials.id, "default"))
+          .get()
+        const claudeCodeToken = cred?.oauthToken || null
+
+        // Get project path for SDK if projectId provided
+        let cwd = process.cwd()
+        if (input.projectId) {
+          const project = db
+            .select()
+            .from(projects)
+            .where(eq(projects.id, input.projectId))
+            .get()
+          if (project?.path) {
+            cwd = project.path
+          }
+        }
+
+        // If OpenAI-style API config provided, use it directly
+        // We check hasToken here to allow empty tokens if the provider handles auth differently (e.g. local)
+        if (input.apiFormat === "openai" && input.model && (input.token || input.hasToken) && input.baseUrl) {
+          console.log("[generateSubChatName] Using OpenAI-style API for chat name generation")
+          try {
+            const name = await openAIChatCompletion({
+              prompt: `Generate a very short (2-5 words) title for a coding chat that starts with this message. Only output the title, nothing else. No quotes, no explanations.
+
+User message: "${input.userMessage.slice(0, 500)}"
+
+Title:`,
+              model: input.model,
+              apiKey: input.token || "dummy", // Some local providers don't need a real token
+              baseUrl: input.baseUrl,
+              maxTokens: 500, // Increased for reasoning models like z.ai glm-4.7
+              temperature: 0.7,
+            })
+            console.log("[generateSubChatName] Generated name via OpenAI-style API:", name)
+            return { name }
+          } catch (error) {
+            console.log("[generateSubChatName] OpenAI-style API failed:", error)
+            // Fall through to other methods below
+          }
+        }
+
+        // Build custom config for offline fallback check (legacy support)
+        const customConfig = (input.model && input.token && input.baseUrl)
+          ? { model: input.model, token: input.token, baseUrl: input.baseUrl }
+          : undefined
+
+        // Check if we should use offline fallback (Ollama)
+        const offlineResult = await checkOfflineFallback(
+          customConfig,
+          claudeCodeToken,
+          input.ollamaModel,
+          input.offlineModeEnabled ?? true // default to true
+        )
+
+        // If offline fallback determined we should use Ollama, use it
+        if (offlineResult.isUsingOllama || offlineResult.error) {
+          if (offlineResult.error) {
+            console.log("[generateSubChatName] Offline check error:", offlineResult.error)
+          } else {
+            console.log("[generateSubChatName] Using Ollama for chat name generation")
+          }
           const ollamaName = await generateChatNameWithOllama(input.userMessage, input.ollamaModel)
           if (ollamaName) {
             console.log("[generateSubChatName] Generated name via Ollama:", ollamaName)
@@ -1311,43 +1502,57 @@ export const chatsRouter = router({
           return { name: getFallbackName(input.userMessage) }
         }
 
-        // Online - use web API
-        const authManager = getAuthManager()
-        const token = await authManager.getValidToken()
-        const apiUrl = "https://21st.dev"
+        // Try Claude Code SDK for chat name generation
+        if (claudeCodeToken) {
+          console.log("[generateSubChatName] Using Claude Code SDK for chat name generation")
+          try {
+            const sdk = await import("@anthropic-ai/claude-agent-sdk")
+            const claudeQuery = sdk.query
 
-        console.log(
-          "[generateSubChatName] Online - calling API with token:",
-          token ? "present" : "missing",
-        )
+            const prompt = `Generate a very short (2-5 words) title for a coding chat that starts with this message. Only output the title, nothing else. No quotes, no explanations.
 
-        const response = await fetch(
-          `${apiUrl}/api/agents/sub-chat/generate-name`,
-          {
-            method: "POST",
-            headers: {
-              "Content-Type": "application/json",
-              ...(token && { "X-Desktop-Token": token }),
-            },
-            body: JSON.stringify({ userMessage: input.userMessage }),
-          },
-        )
+User message: "${input.userMessage.slice(0, 500)}"
 
-        console.log("[generateSubChatName] Response status:", response.status)
+Title:`
 
-        if (!response.ok) {
-          const errorText = await response.text()
-          console.error(
-            "[generateSubChatName] API error:",
-            response.status,
-            errorText,
-          )
-          return { name: getFallbackName(input.userMessage) }
+            const stream = claudeQuery({
+              prompt,
+              options: {
+                cwd,
+                systemPrompt: { type: "preset", preset: "claude_code" },
+                env: buildClaudeEnv(),
+                permissionMode: "bypassPermissions",
+                allowDangerouslySkipPermissions: true,
+                pathToClaudeCodeExecutable: getBundledClaudeBinaryPath(),
+                continue: true,
+              },
+            })
+
+            // Extract the text response from the stream
+            for await (const msg of stream) {
+              if ((msg as any).type === "text") {
+                const name = (msg as any).text?.trim() || ""
+                console.log("[generateSubChatName] Generated name via Claude Code SDK:", name)
+                return { name }
+              }
+            }
+          } catch (sdkError) {
+            console.log("[generateSubChatName] Claude Code SDK failed, trying Ollama:", sdkError)
+            // Fall through to Ollama below
+          }
         }
 
-        const data = await response.json()
-        console.log("[generateSubChatName] Generated name:", data.name)
-        return { name: data.name || getFallbackName(input.userMessage) }
+        // Fallback: Try Ollama if SDK failed or no token
+        console.log("[generateSubChatName] Trying Ollama...")
+        const ollamaName = await generateChatNameWithOllama(input.userMessage, input.ollamaModel)
+        if (ollamaName) {
+          console.log("[generateSubChatName] Generated name via Ollama:", ollamaName)
+          return { name: ollamaName }
+        }
+
+        // Final fallback
+        console.log("[generateSubChatName] Using fallback")
+        return { name: getFallbackName(input.userMessage) }
       } catch (error) {
         console.error("[generateSubChatName] Error:", error)
         return { name: getFallbackName(input.userMessage) }

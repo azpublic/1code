@@ -163,6 +163,8 @@ export interface ChatInputAreaProps {
   onInputContentChange?: (hasContent: boolean) => void
   // Callback to send message with question answer (Enter sends immediately, not to queue)
   onSubmitWithQuestionAnswer?: () => void
+  // Model provider display name (computed from current chat's model provider)
+  modelProviderDisplay?: string
 }
 
 /**
@@ -181,7 +183,8 @@ function arePropsEqual(prevProps: ChatInputAreaProps, nextProps: ChatInputAreaPr
     prevProps.repository !== nextProps.repository ||
     prevProps.sandboxId !== nextProps.sandboxId ||
     prevProps.projectPath !== nextProps.projectPath ||
-    prevProps.isMobile !== nextProps.isMobile
+    prevProps.isMobile !== nextProps.isMobile ||
+    prevProps.modelProviderDisplay !== nextProps.modelProviderDisplay
   ) {
     return false
   }
@@ -355,6 +358,7 @@ export const ChatInputArea = memo(function ChatInputArea({
   firstQueueItemId,
   onInputContentChange,
   onSubmitWithQuestionAnswer,
+  modelProviderDisplay,
 }: ChatInputAreaProps) {
   // Local state - changes here don't re-render parent
   const [hasContent, setHasContent] = useState(false)
@@ -1301,14 +1305,7 @@ export const ChatInputArea = memo(function ChatInputArea({
                         >
                           <ClaudeCodeIcon className="h-3.5 w-3.5 shrink-0" />
                           <span className="truncate">
-                            {hasCustomClaudeConfig ? (
-                              "Custom Model"
-                            ) : (
-                              <>
-                                {selectedModel?.name}{" "}
-                                <span className="text-muted-foreground">4.5</span>
-                              </>
-                            )}
+                            {modelProviderDisplay || (hasCustomClaudeConfig ? "Custom Model" : `${selectedModel?.name} 4.5`)}
                           </span>
                           <ChevronDown className="h-3 w-3 shrink-0 opacity-50" />
                         </button>

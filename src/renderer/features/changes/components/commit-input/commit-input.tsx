@@ -7,7 +7,18 @@ import { cn } from "../../../../lib/utils";
 import { IconSpinner } from "../../../../components/ui/icons";
 import { useQueryClient } from "@tanstack/react-query";
 import { useAtomValue } from "jotai";
-import { selectedOllamaModelAtom } from "../../../../lib/atoms";
+import {
+  selectedOllamaModelAtom,
+  customClaudeConfigAtom,
+  normalizeCustomClaudeConfig,
+  autoOfflineModeAtom,
+  showOfflineModeFeaturesAtom,
+  appTaskProviderIdAtom,
+  activeProfileIdAtom,
+  modelProfilesAtom,
+  type ApiFormat,
+} from "../../../../lib/atoms";
+import { appStore } from "../../../../lib/jotai-store";
 
 interface CommitInputProps {
 	worktreePath: string;
@@ -94,11 +105,56 @@ export function CommitInput({
 				console.log("[CommitInput] No message, generating with AI for files:", selectedFilePaths);
 				setIsGenerating(true);
 				try {
+					// Get offline mode settings
+					const showOfflineFeatures = appStore.get(showOfflineModeFeaturesAtom);
+					const autoOffline = appStore.get(autoOfflineModeAtom);
+					const offlineModeEnabled = showOfflineFeatures && autoOffline;
+
+					// Get model config for app tasks (commit message generation)
+					// Priority: appTaskProviderIdAtom > activeProfileIdAtom > customClaudeConfigAtom (legacy)
+					const appTaskProviderId = appStore.get(appTaskProviderIdAtom);
+					const activeProfileId = appStore.get(activeProfileIdAtom);
+					const modelProfiles = appStore.get(modelProfilesAtom);
+
+					// Find the profile to use
+					let profileId = appTaskProviderId || activeProfileId;
+					let profile = profileId ? modelProfiles.find(p => p.id === profileId) : null;
+
+					// Fall back to legacy custom config if no profile found
+					let model: string | undefined;
+					let token: string | undefined;
+					let baseUrl: string | undefined;
+					let apiFormat: ApiFormat | undefined;
+
+					if (profile) {
+						// Use profile config
+						model = profile.config.model;
+						token = profile.config.token;
+						baseUrl = profile.config.baseUrl;
+						apiFormat = profile.apiFormat;
+					} else {
+						// Fall back to legacy custom config
+						const storedCustomConfig = appStore.get(customClaudeConfigAtom);
+						const customConfig = normalizeCustomClaudeConfig(storedCustomConfig);
+						if (customConfig) {
+							model = customConfig.model;
+							token = customConfig.token;
+							baseUrl = customConfig.baseUrl;
+							apiFormat = "anthropic"; // Default to anthropic for legacy config
+						}
+					}
+
 					// Pass selected file paths to generate message only for those files
 					const result = await generateCommitMutation.mutateAsync({
 						chatId,
 						filePaths: selectedFilePaths,
 						ollamaModel: selectedOllamaModel,
+						offlineModeEnabled,
+						// New multi-model parameters
+						model,
+						token,
+						baseUrl,
+						apiFormat,
 					});
 					console.log("[CommitInput] AI generated message:", result.message);
 					commitMessage = result.message;

@@ -1,39 +1,28 @@
 /**
  * API fetch helper for desktop app
- *
- * In the desktop app, relative fetch paths like "/api/..." don't work
- * because the app is loaded from a local file (file://...).
- * This helper provides the correct base URL for API requests.
+ * DISABLED: 21st.dev API has been disabled for local-only operation
  */
-
-let cachedBaseUrl: string | null = null
 
 /**
- * Get the API base URL (cached after first call)
- * Always returns https://21st.dev (both in dev and production)
+ * Get the API base URL
+ * DISABLED: 21st.dev API has been disabled for local-only operation
  */
 export async function getApiBaseUrl(): Promise<string> {
-  if (cachedBaseUrl) return cachedBaseUrl
-  cachedBaseUrl = await window.desktopApi.getApiBaseUrl()
-  return cachedBaseUrl
+  throw new Error("21st.dev API is disabled. The app now operates in local-only mode.")
 }
 
 /**
  * Fetch wrapper that uses the correct API base URL
- * Use this instead of fetch() for API requests in the desktop app
+ * DISABLED: 21st.dev API has been disabled for local-only operation
  *
  * @param path - API path (e.g., "/api/tts")
  * @param init - Fetch init options
- * @param options.withCredentials - Include credentials (default: false for CORS compatibility)
+ * @param options.withCredentials - Include credentials (default: false)
  */
 export async function apiFetch(
   path: string,
   init?: RequestInit,
   options?: { withCredentials?: boolean }
 ): Promise<Response> {
-  const baseUrl = await getApiBaseUrl()
-  return fetch(`${baseUrl}${path}`, {
-    ...init,
-    ...(options?.withCredentials && { credentials: "include" }),
-  })
+  throw new Error("21st.dev API is disabled. The app now operates in local-only mode.")
 }

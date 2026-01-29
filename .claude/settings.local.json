@@ -4,7 +4,9 @@
       "Bash(dir:*)",
       "Bash(bun run build:*)",
       "Bash(bun run:*)",
-      "Bash(npx electron-builder:*)"
+      "Bash(npx electron-builder:*)",
+      "Bash(tasklist:*)",
+      "Bash(findstr:*)"
     ]
   }
 }
