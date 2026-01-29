@@ -2,6 +2,7 @@
 
 import { useState, useRef, useEffect, useCallback, memo } from "react"
 import { useAtomValue } from "jotai"
+import { Badge } from "../../../components/ui/badge"
 import { cn } from "../../../lib/utils"
 import { TypewriterText } from "../../../components/ui/typewriter-text"
 import { justCreatedIdsAtom } from "../atoms"
@@ -16,6 +17,8 @@ interface ChatTitleEditorProps {
   hasMessages?: boolean
   projectName?: string
   branch?: string
+  projectPath?: string
+  worktreePath?: string | null
 }
 
 // Custom comparison to prevent re-renders during streaming
@@ -31,7 +34,9 @@ function areTitlePropsEqual(
     prev.chatId === next.chatId &&
     prev.hasMessages === next.hasMessages &&
     prev.projectName === next.projectName &&
-    prev.branch === next.branch
+    prev.branch === next.branch &&
+    prev.projectPath === next.projectPath &&
+    prev.worktreePath === next.worktreePath
   )
 }
 
@@ -45,6 +50,8 @@ export const ChatTitleEditor = memo(function ChatTitleEditor({
   hasMessages = false,
   projectName,
   branch,
+  projectPath,
+  worktreePath,
 }: ChatTitleEditorProps) {
   const [isEditing, setIsEditing] = useState(false)
   const [editValue, setEditValue] = useState(name)
@@ -148,7 +155,13 @@ export const ChatTitleEditor = memo(function ChatTitleEditor({
   }
 
   // Fixed height to prevent layout shift when switching between view/edit modes
-  const heightClass = isMobile ? "h-7" : branch ? "h-10" : "h-7"
+  // Height increases when showing branch or local mode indicator
+  const isLocalMode = worktreePath === null
+  const hasSubTitle = !isMobile && (branch || isLocalMode)
+  const heightClass = isMobile ? "h-7" : hasSubTitle ? "h-10" : "h-7"
+
+  // Get folder name from project path for local mode display
+  const folderName = projectPath ? projectPath.split(/[/\\]/).filter(Boolean).pop() : ""
 
   return (
     <div
@@ -179,14 +192,16 @@ export const ChatTitleEditor = memo(function ChatTitleEditor({
           )}
         >
           <span className={cn(
-            "block truncate",
+            "flex items-center gap-1.5 truncate",
             isMobile ? "text-base" : "text-lg",
             "font-medium text-foreground"
           )}>
             {projectName && (
               <>
-                <span className="font-medium">{projectName}</span>
-                <span className="mx-1 text-muted-foreground">•</span>
+                <Badge variant="secondary" className="font-normal text-xs px-1.5 py-0">
+                  {projectName}
+                </Badge>
+                <span className="text-muted-foreground">•</span>
               </>
             )}
             <TypewriterText
@@ -197,10 +212,22 @@ export const ChatTitleEditor = memo(function ChatTitleEditor({
               showPlaceholder={hasMessages}
             />
           </span>
-          {branch && (
-            <span className="text-xs text-muted-foreground truncate mt-0.5">
-              {branch}
-            </span>
+          {!isMobile && (
+            <>
+              {isLocalMode && folderName && (
+                <span className="flex items-center gap-1.5 text-xs text-muted-foreground truncate mt-0.5">
+                  <Badge variant="destructive" className="font-normal text-[10px] px-1 py-0 h-auto">
+                    Local
+                  </Badge>
+                  {folderName}
+                </span>
+              )}
+              {branch && !isLocalMode && (
+                <span className="text-xs text-muted-foreground truncate mt-0.5">
+                  {branch}
+                </span>
+              )}
+            </>
           )}
         </div>
       )}

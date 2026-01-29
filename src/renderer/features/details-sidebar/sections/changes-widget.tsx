@@ -30,7 +30,18 @@ import { trpc } from "@/lib/trpc"
 import { toast } from "sonner"
 import { useQueryClient } from "@tanstack/react-query"
 import { useAtomValue } from "jotai"
-import { selectedOllamaModelAtom } from "@/lib/atoms"
+import {
+  selectedOllamaModelAtom,
+  customClaudeConfigAtom,
+  normalizeCustomClaudeConfig,
+  autoOfflineModeAtom,
+  showOfflineModeFeaturesAtom,
+  appTaskProviderIdAtom,
+  activeProfileIdAtom,
+  modelProfilesAtom,
+  type ApiFormat,
+} from "@/lib/atoms"
+import { appStore } from "@/lib/jotai-store"
 import type { ParsedDiffFile } from "../types"
 
 // Action type for the dropdown button
@@ -241,11 +252,55 @@ export const ChangesWidget = memo(function ChangesWidget({
 
     setIsDirectCommitting(true)
     try {
+      // Get offline mode settings
+      const showOfflineFeatures = appStore.get(showOfflineModeFeaturesAtom)
+      const autoOffline = appStore.get(autoOfflineModeAtom)
+      const offlineModeEnabled = showOfflineFeatures && autoOffline
+
+      // Get model config for app tasks (commit message generation)
+      // Priority: appTaskProviderIdAtom > activeProfileIdAtom > customClaudeConfigAtom (legacy)
+      const appTaskProviderId = appStore.get(appTaskProviderIdAtom)
+      const activeProfileId = appStore.get(activeProfileIdAtom)
+      const modelProfiles = appStore.get(modelProfilesAtom)
+
+      // Find the profile to use
+      let profileId = appTaskProviderId || activeProfileId
+      let profile = profileId ? modelProfiles.find(p => p.id === profileId) : null
+
+      // Fall back to legacy custom config if no profile found
+      let model: string | undefined
+      let token: string | undefined
+      let baseUrl: string | undefined
+      let apiFormat: ApiFormat | undefined
+
+      if (profile) {
+        // Use profile config
+        model = profile.config.model
+        token = profile.config.token
+        baseUrl = profile.config.baseUrl
+        apiFormat = profile.apiFormat
+      } else {
+        // Fall back to legacy custom config
+        const storedCustomConfig = appStore.get(customClaudeConfigAtom)
+        const customConfig = normalizeCustomClaudeConfig(storedCustomConfig)
+        if (customConfig) {
+          model = customConfig.model
+          token = customConfig.token
+          baseUrl = customConfig.baseUrl
+          apiFormat = "anthropic" // Default to anthropic for legacy config
+        }
+      }
+
       // Generate AI commit message
       const result = await generateCommitMutation.mutateAsync({
         chatId,
         filePaths: selectedPaths,
         ollamaModel: selectedOllamaModel,
+        offlineModeEnabled,
+        model,
+        token,
+        baseUrl,
+        apiFormat,
       })
 
       // Commit with the generated message

@@ -2,9 +2,17 @@ import { execFile } from "node:child_process";
 import { existsSync } from "node:fs";
 import { randomBytes } from "node:crypto";
 import { mkdir, readFile, stat, writeFile } from "node:fs/promises";
-import { devNull, homedir } from "node:os";
+import { homedir } from "node:os";
 import { join } from "node:path";
 import { promisify } from "node:util";
+
+/**
+ * Git's /dev/null equivalent.
+ * Git understands "/dev/null" on all platforms including Windows.
+ * We use this instead of os.devNull because os.devNull returns "\\\\.\\nul" on Windows
+ * which gets escaped incorrectly when passed through simple-git.
+ */
+const GIT_DEV_NULL = "/dev/null";
 import simpleGit from "simple-git";
 import {
 	adjectives,
@@ -1198,6 +1206,8 @@ export async function getWorktreeDiff(
 				return true;
 			});
 
+			console.log("[getWorktreeDiff] Untracked files:", untrackedFiles);
+
 			// git diff --no-index only accepts 2 paths, so we need to diff each file separately
 			// Also, git diff --no-index returns exit code 1 when files differ, which simple-git treats as error
 			// So we use raw() to get the output regardless of exit code
@@ -1208,11 +1218,12 @@ export async function getWorktreeDiff(
 						"diff",
 						"--no-color",
 						"--no-index",
-						devNull,
+						GIT_DEV_NULL,
 						file,
 					]);
 					if (fileDiff) {
 						untrackedDiffs.push(fileDiff);
+						console.log(`[getWorktreeDiff] Generated diff for untracked file: ${file}`);
 					}
 				} catch (error: unknown) {
 					// git diff --no-index returns exit code 1 when files differ
@@ -1222,17 +1233,25 @@ export async function getWorktreeDiff(
 						// Extract the diff from the error message
 						const diffStart = gitError.message.indexOf("diff --git");
 						if (diffStart !== -1) {
-							untrackedDiffs.push(gitError.message.substring(diffStart));
+							const extractedDiff = gitError.message.substring(diffStart);
+							untrackedDiffs.push(extractedDiff);
+							console.log(`[getWorktreeDiff] Extracted diff from error for untracked file: ${file}`);
 						}
+					} else {
+						console.warn(`[getWorktreeDiff] Failed to generate diff for ${file}:`, error);
 					}
 				}
 			}
 			const untrackedDiff = untrackedDiffs.join("\n");
 
+			console.log("[getWorktreeDiff] Untracked diff length:", untrackedDiff.length);
+			console.log("[getWorktreeDiff] Working diff length:", workingDiff.length);
+
 			const combinedDiff = [workingDiff, untrackedDiff]
 				.filter(Boolean)
 				.join("\n");
 
+			console.log("[getWorktreeDiff] Combined diff length:", combinedDiff.length);
 			return { success: true, diff: combinedDiff };
 		}
 

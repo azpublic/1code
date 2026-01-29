@@ -1,0 +1,170 @@
+QUICK REFERENCE: Interesting Forks from 1code (Forks 301-438)
+================================================================================
+
+HIGH PRIORITY - Must Investigate
+================================================================================
+
+1. jaydeland/claw
+   https://github.com/jaydeland/claw
+   Features: AWS SSO, Bedrock integration, Homebrew install, Flox environment
+   Stars: Unknown
+   Why: Complete enterprise rebrand with significant enhancements
+
+2. SameeranB/ii-client
+   https://github.com/SameeranB/ii-client
+   Features: Custom slash commands, keyboard shortcuts, file tracking, text selection
+   Stars: Unknown
+   Why: Major UX improvements and customization features
+
+3. werstatyw/1code-docker
+   https://github.com/werstatyw/1code-docker
+   Features: Docker/containerization support
+   Stars: 0
+   Why: Docker integration for easier deployment
+
+================================================================================
+MEDIUM PRIORITY - Worth Reviewing
+================================================================================
+
+4. hadimousavi79/claude-code-ui
+   https://github.com/hadimousavi79/claude-code-ui
+   Features: UI improvements, better Windows support
+   Stars: Unknown
+   Why: UI-focused enhancements
+
+5. syntax-syndicate/1code-ui
+   https://github.com/syntax-syndicate/1code-ui
+   Features: UI improvements
+   Stars: Unknown
+   Why: UI-focused enhancements
+
+6. ChrisPei/jiminy
+   https://github.com/ChrisPei/jiminy
+   Features: Complete rebrand
+   Stars: Unknown
+   Why: Significant modifications suggested by rename
+
+7. tomonegram-bit/CoderX
+   https://github.com/tomonegram-bit/CoderX
+   Features: Complete rebrand to "CoderX"
+   Stars: Unknown
+   Why: Different positioning may have unique features
+
+8. vionaaru/1code-UI
+   https://github.com/vionaaru/1code-UI
+   Features: UI improvements
+   Stars: Unknown
+   Why: Another UI-focused fork
+
+9. harryaskham/1code-build
+   https://github.com/harryaskham/1code-build
+   Features: Build/customization focus
+   Stars: Unknown
+   Why: Build process improvements
+
+10. Zakgap/1codeTest
+    https://github.com/Zakgap/1codeTest
+    Features: Experimental/test fork
+    Stars: Unknown
+    Why: May have experimental features
+
+================================================================================
+LOW PRIORITY - Check if Time Permits
+================================================================================
+
+11. buddhathemanoj/kcode
+    https://github.com/buddhathemanoj/kcode
+    Features: Custom branding
+
+12. ruffledsapp/duhcode
+    https://github.com/ruffledsapp/duhcode
+    Features: Custom branding
+
+13. abel30567/Leclaude
+    https://github.com/abel30567/Leclaude
+    Features: French branding/localization
+
+14. Ahmedalsadi-1/kronoscode
+    https://github.com/Ahmedalsadi-1/kronoscode
+    Features: Custom branding
+
+15. AkaraChen/1code-free
+    https://github.com/AkaraChen/1code-free
+    Features: Free tier modifications
+
+16. adilsarfraz02/1code-genertor
+    https://github.com/adilsarfraz02/1code-genertor
+    Features: Code generation features
+
+17. Joe30v/1code-ai-
+    https://github.com/Joe30v/1code-ai-
+    Features: AI-related modifications
+
+18. murodin/1code-21st-dev
+    https://github.com/murodin/1code-21st-dev
+    Features: Preserves upstream branding
+
+19. RussPalms/1code_dev
+    https://github.com/RussPalms/1code_dev
+    Features: Development branch
+
+20. crazyboyonline/Barbotcode
+    https://github.com/crazyboyonline/Barbotcode
+    Features: Custom branding
+
+21. io-saDHin/1code-io-saDHin
+    https://github.com/io-saDHin/1code-io-saDHin
+    Features: Personalized fork
+
+================================================================================
+DEFAULT NAME FORKS - May Have Custom Branches
+================================================================================
+
+Forks with default "1code" names but potentially interesting:
+- cpiprint (1 star)
+- jslabxyz (1 star)
+- GavinHolder
+- Zenon612
+- 0xMichaelCarter
+- rsohlot
+- siliconbayou
+- agenticevangelist
+
+================================================================================
+FEATURES TO EXTRACT FOR UPSTREAM
+================================================================================
+
+HIGH VALUE:
+- Docker Support (werstatyw/1code-docker)
+- Custom Slash Commands (SameeranB/ii-client)
+- Configurable Keyboard Shortcuts (SameeranB/ii-client)
+- Viewed Files Tracking (SameeranB/ii-client)
+- AWS SSO/Bedrock Integration (jaydeland/claw)
+
+MEDIUM VALUE:
+- Homebrew Installation (jaydeland/claw)
+- Flox Environment (jaydeland/claw)
+- Text Selection from Code (SameeranB/ii-client)
+- Enhanced Windows Support (hadimousavi79/claude-code-ui)
+- UI Improvements (various UI-focused forks)
+
+================================================================================
+NEXT STEPS
+================================================================================
+
+For each high-priority fork:
+1. Check branches: https://api.github.com/repos/{owner}/{repo}/branches
+2. Get commits: https://api.github.com/repos/{owner}/{repo}/commits?per_page=10
+3. Compare: https://github.com/{owner}/{repo}/compare/21st-dev:main...{owner}:main
+4. Read README/Documentation
+5. Check Issues/PRs for discussions
+
+================================================================================
+ANALYSIS INFO
+================================================================================
+
+Date: January 29, 2026
+Analyzed: Forks 301-438 (138 forks)
+Total Repository Forks: 438
+Repository: https://github.com/21st-dev/1code
+Repository Stars: 4.6k

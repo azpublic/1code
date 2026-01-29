@@ -41,6 +41,22 @@ function getFallbackName(userMessage: string): string {
 }
 
 /**
+ * Normalize file path for consistent comparison across platforms.
+ * Converts backslashes to forward slashes and removes redundant segments.
+ * Git always uses forward slashes in diff output, so we normalize to that.
+ */
+function normalizePath(p: string): string {
+  if (!p) return p
+  // Convert backslashes to forward slashes (Windows -> Git format)
+  const normalized = p.replace(/\\/g, '/')
+  // Remove leading ./ if present
+  if (normalized.startsWith('./')) {
+    return normalized.slice(2)
+  }
+  return normalized
+}
+
+/**
  * Create a chat from a task
  * Used by tasks.createChatFromTask mutation
  * @param db - Database instance
@@ -1210,12 +1226,22 @@ export const chatsRouter = router({
 
       // Filter to only selected files if filePaths provided
       if (input.filePaths && input.filePaths.length > 0) {
-        const selectedPaths = new Set(input.filePaths)
+        // Normalize all selected paths for consistent comparison
+        const selectedPaths = new Set(input.filePaths.map(normalizePath))
+        console.log(`[generateCommitMessage] Selected paths (normalized):`, [...selectedPaths])
+        console.log(`[generateCommitMessage] Files from diff:`, files.map(f => ({
+          newPath: f.newPath,
+          oldPath: f.oldPath,
+          isNewFile: f.isNewFile
+        })))
         files = files.filter((f) => {
           const filePath = f.newPath !== "/dev/null" ? f.newPath : f.oldPath
+          const normalizedFilePath = normalizePath(filePath)
           // Match by exact path or by path suffix (handle different path formats)
-          return selectedPaths.has(filePath) ||
-            [...selectedPaths].some(sp => filePath.endsWith(sp) || sp.endsWith(filePath))
+          const matches = selectedPaths.has(normalizedFilePath) ||
+            [...selectedPaths].some(sp => normalizedFilePath.endsWith(sp) || sp.endsWith(normalizedFilePath))
+          console.log(`[generateCommitMessage] Checking ${filePath} (normalized: ${normalizedFilePath}): ${matches}`)
+          return matches
         })
         console.log(`[generateCommitMessage] Filtered ${files.length} files from ${input.filePaths.length} selected paths`)
       }

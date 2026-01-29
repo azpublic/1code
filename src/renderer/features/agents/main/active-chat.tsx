@@ -1866,6 +1866,7 @@ const ChatViewInner = memo(function ChatViewInner({
   projectPath,
   projectName,
   branch,
+  originalProjectPath,
   isArchived = false,
   onRestoreWorkspace,
   existingPrUrl,
@@ -1893,6 +1894,7 @@ const ChatViewInner = memo(function ChatViewInner({
   projectPath?: string
   projectName?: string
   branch?: string
+  originalProjectPath?: string
   isArchived?: boolean
   onRestoreWorkspace?: () => void
   existingPrUrl?: string | null
@@ -4128,6 +4130,8 @@ const ChatViewInner = memo(function ChatViewInner({
             hasMessages={messages.length > 0}
             projectName={projectName}
             branch={branch}
+            projectPath={originalProjectPath}
+            worktreePath={projectPath}
           />
         </div>
       )}
@@ -6861,6 +6865,7 @@ Make sure to preserve all functionality from both branches when resolving confli
                       projectPath={worktreePath || undefined}
                       projectName={(agentChat as any)?.project?.name}
                       branch={agentChat?.branch}
+                      originalProjectPath={(agentChat as any)?.project?.path}
                       isArchived={isArchived}
                       onRestoreWorkspace={handleRestoreWorkspace}
                       existingPrUrl={agentChat?.prUrl}

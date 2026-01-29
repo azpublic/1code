@@ -6,7 +6,11 @@
       "Bash(bun run:*)",
       "Bash(npx electron-builder:*)",
       "Bash(tasklist:*)",
-      "Bash(findstr:*)"
+      "Bash(findstr:*)",
+      "Bash(curl:*)",
+      "Bash(node:*)",
+      "WebSearch",
+      "Bash(ls:*)"
     ]
   }
 }
