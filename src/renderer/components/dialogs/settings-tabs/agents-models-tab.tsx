@@ -36,6 +36,9 @@ function useIsNarrowScreen(): boolean {
 export function AgentsModelsTab() {
   const setSettingsOpen = useSetAtom(agentsSettingsDialogOpenAtom)
   const isNarrowScreen = useIsNarrowScreen()
+  const { data: claudeCodeIntegration, isLoading: isClaudeCodeLoading } =
+    trpc.claudeCode.getIntegration.useQuery()
+  const isClaudeCodeConnected = claudeCodeIntegration?.isConnected
 
   // OpenAI API key state
   const [storedOpenAIKey, setStoredOpenAIKey] = useAtom(openaiApiKeyAtom)
@@ -92,6 +95,43 @@ export function AgentsModelsTab() {
   useEffect(() => {
     setOpenaiKey(storedOpenAIKey)
   }, [storedOpenAIKey])
+
+  const trimmedModel = model.trim()
+  const trimmedBaseUrl = baseUrl.trim()
+  const trimmedToken = token.trim()
+  const canSave = Boolean(trimmedModel && trimmedBaseUrl && trimmedToken)
+  const canReset = Boolean(trimmedModel || trimmedBaseUrl || trimmedToken)
+
+  const handleSave = () => {
+    if (!canSave) {
+      toast.error("Fill model, token, and base URL to save")
+      return
+    }
+    const nextConfig: CustomClaudeConfig = {
+      model: trimmedModel,
+      token: trimmedToken,
+      baseUrl: trimmedBaseUrl,
+    }
+
+    setStoredConfig(nextConfig)
+    toast.success("Model settings saved")
+  }
+
+  const handleReset = () => {
+    setStoredConfig(EMPTY_CONFIG)
+    setModel("")
+    setBaseUrl("")
+    setToken("")
+    toast.success("Model settings reset")
+  }
+
+  const handleClaudeCodeSetup = () => {
+    // Don't disconnect - just open onboarding to add a new account
+    // The previous code was calling disconnectClaudeCode.mutate() which
+    // deleted the active account when users tried to add a new one
+    setSettingsOpen(false)
+    setAnthropicOnboardingCompleted(false)
+  }
 
   // OpenAI key handlers
   const trimmedOpenAIKey = openaiKey.trim()

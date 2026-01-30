@@ -222,7 +222,9 @@ function arePropsEqual(prevProps: ChatInputAreaProps, nextProps: ChatInputAreaPr
     prevProps.sandboxId !== nextProps.sandboxId ||
     prevProps.projectPath !== nextProps.projectPath ||
     prevProps.isMobile !== nextProps.isMobile ||
-    prevProps.modelProviderDisplay !== nextProps.modelProviderDisplay
+    prevProps.modelProviderDisplay !== nextProps.modelProviderDisplay ||
+    prevProps.queueLength !== nextProps.queueLength ||
+    prevProps.firstQueueItemId !== nextProps.firstQueueItemId
   ) {
     return false
   }
@@ -252,7 +254,8 @@ function arePropsEqual(prevProps: ChatInputAreaProps, nextProps: ChatInputAreaPr
     prevProps.onInputContentChange !== nextProps.onInputContentChange ||
     prevProps.onSubmitWithQuestionAnswer !== nextProps.onSubmitWithQuestionAnswer ||
     prevProps.onModelChange !== nextProps.onModelChange ||
-    prevProps.modelProviderId !== nextProps.modelProviderId
+    prevProps.modelProviderId !== nextProps.modelProviderId ||
+    prevProps.onSendFromQueue !== nextProps.onSendFromQueue
   ) {
     return false
   }
@@ -440,7 +443,7 @@ export const ChatInputArea = memo(function ChatInputArea({
   const autoOfflineMode = useAtomValue(autoOfflineModeAtom)
   const showOfflineFeatures = useAtomValue(showOfflineModeFeaturesAtom)
   const [selectedModel, setSelectedModel] = useState(
-    () => availableModels.models.find((m) => m.id === lastSelectedModelId) || availableModels.models[1],
+    () => availableModels.models.find((m) => m.id === lastSelectedModelId) || availableModels.models[0],
   )
 
   // Sync selectedModel when atom value changes (e.g., after localStorage hydration)
@@ -1407,12 +1410,11 @@ export const ChatInputArea = memo(function ChatInputArea({
                 </div>
 
                 <div className="flex items-center gap-0.5 ml-auto flex-shrink-0">
-                  {/* Hidden file input - accepts images and text/code files */}
+                  {/* Hidden file input - accepts any files */}
                   <input
                     type="file"
                     ref={fileInputRef}
                     hidden
-                    accept="image/jpeg,image/png,.txt,.md,.markdown,.json,.yaml,.yml,.xml,.csv,.tsv,.log,.ini,.cfg,.conf,.js,.ts,.jsx,.tsx,.py,.rb,.go,.rs,.java,.kt,.swift,.c,.cpp,.h,.hpp,.cs,.php,.html,.css,.scss,.sass,.less,.sql,.sh,.bash,.zsh,.ps1,.bat,.env,.gitignore,.dockerignore,.editorconfig,.prettierrc,.eslintrc,.babelrc,.nvmrc,.pdf"
                     multiple
                     onChange={(e) => {
                       const inputFiles = Array.from(e.target.files || [])

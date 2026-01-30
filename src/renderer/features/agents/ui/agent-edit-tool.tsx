@@ -19,6 +19,7 @@ import { getToolStatus } from "./agent-tool-registry"
 import { AgentToolInterrupted } from "./agent-tool-interrupted"
 import { areToolPropsEqual } from "./agent-tool-utils"
 import { getFileIconByExtension } from "../mentions/agents-file-mention"
+import { useFileOpen } from "../mentions"
 import { agentsDiffSidebarOpenAtom, agentsFocusedDiffFileAtom } from "../atoms"
 import { cn } from "../../../lib/utils"
 
@@ -225,6 +226,7 @@ export const AgentEditTool = memo(function AgentEditTool({
   // Atoms for opening diff sidebar and focusing on file
   const setDiffSidebarOpen = useSetAtom(agentsDiffSidebarOpenAtom)
   const setFocusedDiffFile = useSetAtom(agentsFocusedDiffFileAtom)
+  const onOpenFile = useFileOpen()
 
   // Determine tool type
   const isWriteMode = part.type === "tool-Write"
@@ -298,11 +300,11 @@ export const AgentEditTool = memo(function AgentEditTool({
   }, [isPending, isInputStreaming])
 
   const handleFilenameClick = useCallback((e: React.MouseEvent) => {
-    if (displayPath) {
+    if (filePath && onOpenFile) {
       e.stopPropagation()
-      handleOpenInDiff()
+      onOpenFile(filePath)
     }
-  }, [displayPath, handleOpenInDiff])
+  }, [filePath, onOpenFile])
 
   const handleExpandButtonClick = useCallback((e: React.MouseEvent) => {
     e.stopPropagation()

@@ -81,13 +81,14 @@ import {
 import { useFileChangeListener, useGitWatcher } from "../../../lib/hooks/use-file-change-listener"
 import { useRemoteChat } from "../../../lib/hooks/use-remote-chats"
 import { remoteApi } from "../../../lib/remote-api"
+import { useFileChangeListener, useGitWatcher } from "../../../lib/hooks/use-file-change-listener"
+import { useRemoteChat } from "../../../lib/hooks/use-remote-chats"
+import { useResolvedHotkeyDisplay } from "../../../lib/hotkeys"
 import { appStore } from "../../../lib/jotai-store"
 import { api } from "../../../lib/mock-api"
 import { trpc, trpcClient } from "../../../lib/trpc"
 import { cn } from "../../../lib/utils"
-import { BUILTIN_SLASH_COMMANDS } from "../commands"
 import { isDesktopApp } from "../../../lib/utils/platform"
-import { useResolvedHotkeyDisplay } from "../../../lib/hotkeys"
 import { ChangesPanel } from "../../changes"
 import { DiffCenterPeekDialog } from "../../changes/components/diff-center-peek-dialog"
 import { DiffFullPageView } from "../../changes/components/diff-full-page-view"
@@ -101,6 +102,16 @@ import { DetailsSidebar } from "../../details-sidebar/details-sidebar"
 import { terminalSidebarOpenAtomFamily } from "../../terminal/atoms"
 import { TerminalSidebar } from "../../terminal/terminal-sidebar"
 import {
+  detailsSidebarOpenAtom,
+  unifiedSidebarEnabledAtom,
+} from "../../details-sidebar/atoms"
+import { DetailsSidebar } from "../../details-sidebar/details-sidebar"
+import { FileViewerSidebar } from "../../file-viewer"
+import { FileSearchDialog } from "../../file-viewer/components/file-search-dialog"
+import { terminalSidebarOpenAtomFamily, terminalDisplayModeAtom, terminalBottomHeightAtom } from "../../terminal/atoms"
+import { TerminalSidebar, TerminalBottomPanelContent } from "../../terminal/terminal-sidebar"
+import { ResizableBottomPanel } from "@/components/ui/resizable-bottom-panel"
+import {
   agentsChangesPanelCollapsedAtom,
   agentsChangesPanelWidthAtom,
   agentsDiffSidebarWidthAtom,
@@ -110,6 +121,10 @@ import {
   agentsSubChatsSidebarModeAtom,
   agentsSubChatUnseenChangesAtom,
   agentsUnseenChangesAtom,
+  fileSearchDialogOpenAtom,
+  fileViewerDisplayModeAtom,
+  fileViewerOpenAtomFamily,
+  fileViewerSidebarWidthAtom,
   clearLoading,
   compactingSubChatsAtom,
   currentPlanPathAtomFamily,
@@ -141,11 +156,12 @@ import {
   subChatFilesAtom,
   subChatModeAtomFamily,
   undoStackAtom,
-  openLocallyChatIdAtom,
+  workspaceDiffCacheAtomFamily,
   workspaceDiffCacheAtomFamily,
   type AgentMode,
   type SelectedCommit
 } from "../atoms"
+import { BUILTIN_SLASH_COMMANDS } from "../commands"
 import { AgentSendButton } from "../components/agent-send-button"
 import { OpenLocallyDialog } from "../components/open-locally-dialog"
 import { PreviewSetupHoverCard } from "../components/preview-setup-hover-card"
@@ -174,6 +190,7 @@ import {
 } from "../lib/queue-utils"
 import { RemoteChatTransport } from "../lib/remote-chat-transport"
 import {
+  FileOpenProvider,
   MENTION_PREFIXES,
   type AgentsMentionsEditorHandle,
 } from "../mentions"
@@ -231,6 +248,39 @@ function utf8ToBase64(str: string): string {
   const bytes = new TextEncoder().encode(str)
   const binString = Array.from(bytes, (byte) => String.fromCodePoint(byte)).join("")
   return btoa(binString)
+}
+
+/** Wait for streaming to finish by subscribing to the status store.
+ *  Includes a 30s safety timeout — if the store never transitions to "ready",
+ *  the promise resolves anyway to prevent hanging the UI indefinitely. */
+const STREAMING_READY_TIMEOUT_MS = 30_000
+
+function waitForStreamingReady(subChatId: string): Promise<void> {
+  return new Promise((resolve) => {
+    if (!useStreamingStatusStore.getState().isStreaming(subChatId)) {
+      resolve()
+      return
+    }
+
+    const timeout = setTimeout(() => {
+      console.warn(
+        `[waitForStreamingReady] Timed out after ${STREAMING_READY_TIMEOUT_MS}ms for subChat ${subChatId.slice(-8)}, proceeding anyway`
+      )
+      unsub()
+      resolve()
+    }, STREAMING_READY_TIMEOUT_MS)
+
+    const unsub = useStreamingStatusStore.subscribe(
+      (state) => state.statuses[subChatId],
+      (status) => {
+        if (status === "ready" || status === undefined) {
+          clearTimeout(timeout)
+          unsub()
+          resolve()
+        }
+      }
+    )
+  })
 }
 
 // Exploring tools - these get grouped when 2+ consecutive
@@ -2350,11 +2400,6 @@ const ChatViewInner = memo(function ChatViewInner({
     // Mark as manually aborted to prevent completion sound
     agentChatStore.setManuallyAborted(subChatId, true)
     await stopRef.current()
-    // Call DELETE endpoint to cancel server-side stream
-    await fetch(
-      `/api/agents/chat?id=${encodeURIComponent(subChatId)}`,
-      { method: "DELETE", credentials: "include" },
-    )
   }, [subChatId])
 
   // Wrapper for addTextContext that handles TextSelectionSource
@@ -2369,6 +2414,9 @@ const ChatViewInner = memo(function ChatViewInner({
     } else if (source.type === "plan") {
       // Plan selections are treated as code selections (similar to diff)
       addDiffTextContext(text, source.planPath)
+    } else if (source.type === "file-viewer") {
+      // File viewer selections are treated as code selections
+      addDiffTextContext(text, source.filePath)
     }
   }, [addTextContextOriginal, addDiffTextContext])
 
@@ -2376,6 +2424,22 @@ const ChatViewInner = memo(function ChatViewInner({
   const handleFocusInput = useCallback(() => {
     editorRef.current?.focus()
   }, [])
+
+  // Listen for file-viewer "Add to Context" from the custom context menu
+  useEffect(() => {
+    const handler = (e: Event) => {
+      const detail = (e as CustomEvent).detail as {
+        text: string
+        source: TextSelectionSource
+      }
+      if (detail.text && detail.source) {
+        addTextContext(detail.text, detail.source)
+        editorRef.current?.focus()
+      }
+    }
+    window.addEventListener("file-viewer-add-to-context", handler)
+    return () => window.removeEventListener("file-viewer-add-to-context", handler)
+  }, [addTextContext])
 
   // Handler for quick comment trigger from popover
   const handleQuickComment = useCallback((text: string, source: TextSelectionSource, rect: DOMRect) => {
@@ -2442,10 +2506,12 @@ const ChatViewInner = memo(function ChatViewInner({
   }, [isStreaming, subChatId, setLoadingSubChats])
 
   // Watch for pending PR message and send it
+  // Only the active tab should consume pending messages to prevent
+  // inactive ChatViewInner instances from stealing the message
   const [pendingPrMessage, setPendingPrMessage] = useAtom(pendingPrMessageAtom)
 
   useEffect(() => {
-    if (pendingPrMessage && !isStreaming) {
+    if (pendingPrMessage && !isStreaming && isActive) {
       // Clear the pending message immediately to prevent double-sending
       setPendingPrMessage(null)
 
@@ -2458,7 +2524,7 @@ const ChatViewInner = memo(function ChatViewInner({
       // Reset creating PR state after message is sent
       setIsCreatingPr(false)
     }
-  }, [pendingPrMessage, isStreaming, sendMessage, setPendingPrMessage])
+  }, [pendingPrMessage, isStreaming, isActive, sendMessage, setPendingPrMessage])
 
   // Watch for pending Review message and send it
   const [pendingReviewMessage, setPendingReviewMessage] = useAtom(
@@ -2466,7 +2532,7 @@ const ChatViewInner = memo(function ChatViewInner({
   )
 
   useEffect(() => {
-    if (pendingReviewMessage && !isStreaming) {
+    if (pendingReviewMessage && !isStreaming && isActive) {
       // Clear the pending message immediately to prevent double-sending
       setPendingReviewMessage(null)
 
@@ -2476,7 +2542,7 @@ const ChatViewInner = memo(function ChatViewInner({
         parts: [{ type: "text", text: pendingReviewMessage }],
       })
     }
-  }, [pendingReviewMessage, isStreaming, sendMessage, setPendingReviewMessage])
+  }, [pendingReviewMessage, isStreaming, isActive, sendMessage, setPendingReviewMessage])
 
   // Watch for pending conflict resolution message and send it
   const [pendingConflictMessage, setPendingConflictMessage] = useAtom(
@@ -2484,7 +2550,7 @@ const ChatViewInner = memo(function ChatViewInner({
   )
 
   useEffect(() => {
-    if (pendingConflictMessage && !isStreaming) {
+    if (pendingConflictMessage && !isStreaming && isActive) {
       // Clear the pending message immediately to prevent double-sending
       setPendingConflictMessage(null)
 
@@ -2494,7 +2560,7 @@ const ChatViewInner = memo(function ChatViewInner({
         parts: [{ type: "text", text: pendingConflictMessage }],
       })
     }
-  }, [pendingConflictMessage, isStreaming, sendMessage, setPendingConflictMessage])
+  }, [pendingConflictMessage, isStreaming, isActive, sendMessage, setPendingConflictMessage])
 
   // Watch for pending Merge to Main message and send it
   const [pendingMergeToMainMessage, setPendingMergeToMainMessage] = useAtom(
@@ -2828,13 +2894,6 @@ const ChatViewInner = memo(function ChatViewInner({
           clearInputAndDraft()
           await sendUserMessage(customText)
         }
-
-        // 7. Send custom text as a new user message
-        shouldAutoScrollRef.current = true
-        await sendMessageRef.current({
-          role: "user",
-          parts: [{ type: "text", text: customText }],
-        })
       } finally {
         isSubmittingQuestionAnswerRef.current = false
       }
@@ -2948,7 +3007,7 @@ const ChatViewInner = memo(function ChatViewInner({
     // Send "Build plan" message (now in agent mode)
     sendMessageRef.current({
       role: "user",
-      parts: [{ type: "text", text: "Build plan" }],
+      parts: [{ type: "text", text: "Implement plan" }],
     })
   }, [subChatId, setSubChatMode, scrollToBottom, updateSubChatModeMutation])
 
@@ -3182,11 +3241,6 @@ const ChatViewInner = memo(function ChatViewInner({
         // Mark as manually aborted to prevent completion sound
         agentChatStore.setManuallyAborted(subChatId, true)
         await stop()
-        // Call DELETE endpoint to cancel server-side stream
-        await fetch(`/api/agents/chat?id=${encodeURIComponent(subChatId)}`, {
-          method: "DELETE",
-          credentials: "include",
-        })
       }
     }
 
@@ -3619,82 +3673,83 @@ const ChatViewInner = memo(function ChatViewInner({
     const item = popItemFromQueue(subChatId, itemId)
     if (!item) return
 
-    // Stop current stream if streaming and wait for status to become ready
-    if (isStreamingRef.current) {
-      await handleStop()
-      // Wait for status to become "ready" (max 2 seconds)
-      const maxWait = 2000
-      const pollInterval = 50
-      let waited = 0
-      while (isStreamingRef.current && waited < maxWait) {
-        await new Promise((resolve) => setTimeout(resolve, pollInterval))
-        waited += pollInterval
+    try {
+      // Stop current stream if streaming and wait for status to become ready.
+      // The server-side save block preserves sessionId on abort, so the next
+      // message can resume the session with full conversation context.
+      if (isStreamingRef.current) {
+        await handleStop()
+        await waitForStreamingReady(subChatId)
       }
-    }
 
-    // Build message parts from queued item
-    const parts: any[] = [
-      ...(item.images || []).map((img) => ({
-        type: "data-image" as const,
-        data: {
-          url: img.url,
-          mediaType: img.mediaType,
-          filename: img.filename,
-          base64Data: img.base64Data,
-        },
-      })),
-      ...(item.files || []).map((f) => ({
-        type: "data-file" as const,
-        data: {
-          url: f.url,
-          mediaType: f.mediaType,
-          filename: f.filename,
-          size: f.size,
-        },
-      })),
-    ]
+      // Build message parts from queued item
+      const parts: any[] = [
+        ...(item.images || []).map((img) => ({
+          type: "data-image" as const,
+          data: {
+            url: img.url,
+            mediaType: img.mediaType,
+            filename: img.filename,
+            base64Data: img.base64Data,
+          },
+        })),
+        ...(item.files || []).map((f) => ({
+          type: "data-file" as const,
+          data: {
+            url: f.url,
+            mediaType: f.mediaType,
+            filename: f.filename,
+            size: f.size,
+          },
+        })),
+      ]
 
-    // Add text contexts as mention tokens
-    let mentionPrefix = ""
-    if (item.textContexts && item.textContexts.length > 0) {
-      const quoteMentions = item.textContexts.map((tc) => {
-        const preview = tc.text.slice(0, 50).replace(/[:\[\]]/g, "") // Create and sanitize preview
-        const encodedText = utf8ToBase64(tc.text) // Base64 encode full text
-        return `@[${MENTION_PREFIXES.QUOTE}${preview}:${encodedText}]`
+      // Add text contexts as mention tokens
+      let mentionPrefix = ""
+      if (item.textContexts && item.textContexts.length > 0) {
+        const quoteMentions = item.textContexts.map((tc) => {
+          const preview = tc.text.slice(0, 50).replace(/[:\[\]]/g, "") // Create and sanitize preview
+          const encodedText = utf8ToBase64(tc.text) // Base64 encode full text
+          return `@[${MENTION_PREFIXES.QUOTE}${preview}:${encodedText}]`
+        })
+        mentionPrefix = quoteMentions.join(" ") + " "
+      }
+
+      // Add diff text contexts as mention tokens
+      if (item.diffTextContexts && item.diffTextContexts.length > 0) {
+        const diffMentions = item.diffTextContexts.map((dtc) => {
+          const preview = dtc.text.slice(0, 50).replace(/[:\[\]]/g, "") // Create and sanitize preview
+          const encodedText = utf8ToBase64(dtc.text) // Base64 encode full text
+          const lineNum = dtc.lineNumber || 0
+          return `@[${MENTION_PREFIXES.DIFF}${dtc.filePath}:${lineNum}:${preview}:${encodedText}]`
+        })
+        mentionPrefix += diffMentions.join(" ") + " "
+      }
+
+      if (item.message || mentionPrefix) {
+        parts.push({ type: "text", text: mentionPrefix + (item.message || "") })
+      }
+
+      // Track message sent
+      trackMessageSent({
+        workspaceId: subChatId,
+        messageLength: item.message.length,
+        mode: subChatModeRef.current,
       })
-      mentionPrefix = quoteMentions.join(" ") + " "
+
+      // Update timestamps
+      useAgentSubChatStore.getState().updateSubChatTimestamp(subChatId)
+
+      // Enable auto-scroll and immediately scroll to bottom
+      shouldAutoScrollRef.current = true
+      scrollToBottom()
+
+      await sendMessageRef.current({ role: "user", parts })
+    } catch (error) {
+      console.error("[handleSendFromQueue] Error sending queued message:", error)
+      // Requeue the item at the front so it isn't lost
+      useMessageQueueStore.getState().prependItem(subChatId, item)
     }
-
-    // Add diff text contexts as mention tokens
-    if (item.diffTextContexts && item.diffTextContexts.length > 0) {
-      const diffMentions = item.diffTextContexts.map((dtc) => {
-        const preview = dtc.text.slice(0, 50).replace(/[:\[\]]/g, "") // Create and sanitize preview
-        const encodedText = utf8ToBase64(dtc.text) // Base64 encode full text
-        const lineNum = dtc.lineNumber || 0
-        return `@[${MENTION_PREFIXES.DIFF}${dtc.filePath}:${lineNum}:${preview}:${encodedText}]`
-      })
-      mentionPrefix += diffMentions.join(" ") + " "
-    }
-
-    if (item.message || mentionPrefix) {
-      parts.push({ type: "text", text: mentionPrefix + (item.message || "") })
-    }
-
-    // Track message sent
-    trackMessageSent({
-      workspaceId: subChatId,
-      messageLength: item.message.length,
-      mode: subChatModeRef.current,
-    })
-
-    // Update timestamps
-    useAgentSubChatStore.getState().updateSubChatTimestamp(subChatId)
-
-    // Enable auto-scroll and immediately scroll to bottom
-    shouldAutoScrollRef.current = true
-    scrollToBottom()
-
-    await sendMessageRef.current({ role: "user", parts })
   }, [subChatId, popItemFromQueue, handleStop])
 
   const handleRemoveFromQueue = useCallback((itemId: string) => {
@@ -3718,7 +3773,9 @@ const ChatViewInner = memo(function ChatViewInner({
 
     if (!hasText && !hasImages) return
 
-    // Stop current stream if streaming and wait for status to become ready
+    // Stop current stream if streaming and wait for status to become ready.
+    // The server-side save block sets sessionId=null on abort, so the next
+    // message starts fresh without needing an explicit cancel mutation.
     if (isStreamingRef.current) {
       await handleStop()
 
@@ -4385,6 +4442,17 @@ export function ChatView({
   )
   const [currentPlanPath, setCurrentPlanPath] = useAtom(currentPlanPathAtom)
 
+  // File viewer sidebar state - per-chat open file path
+  const fileViewerAtom = useMemo(
+    () => fileViewerOpenAtomFamily(chatId),
+    [chatId],
+  )
+  const [fileViewerPath, setFileViewerPath] = useAtom(fileViewerAtom)
+  const [fileViewerDisplayMode] = useAtom(fileViewerDisplayModeAtom)
+
+  // File search dialog (Cmd+P)
+  const [fileSearchOpen, setFileSearchOpen] = useAtom(fileSearchDialogOpenAtom)
+
   // Details sidebar state (unified sidebar that combines all right sidebars)
   const isUnifiedSidebarEnabled = useAtomValue(unifiedSidebarEnabledAtom)
   const [isDetailsSidebarOpen, setIsDetailsSidebarOpen] = useAtom(detailsSidebarOpenAtom)
@@ -4428,6 +4496,27 @@ export function ChatView({
     [chatId],
   )
   const [isTerminalSidebarOpen, setIsTerminalSidebarOpen] = useAtom(terminalSidebarAtom)
+  const terminalDisplayMode = useAtomValue(terminalDisplayModeAtom)
+
+  // Keyboard shortcut: Cmd+J to toggle terminal
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (
+        e.metaKey &&
+        !e.altKey &&
+        !e.shiftKey &&
+        !e.ctrlKey &&
+        e.code === "KeyJ"
+      ) {
+        e.preventDefault()
+        e.stopPropagation()
+        setIsTerminalSidebarOpen(!isTerminalSidebarOpen)
+      }
+    }
+
+    window.addEventListener("keydown", handleKeyDown, true)
+    return () => window.removeEventListener("keydown", handleKeyDown, true)
+  }, [isTerminalSidebarOpen, setIsTerminalSidebarOpen])
 
   // Mutual exclusion: Details sidebar vs Plan/Terminal/Diff(side-peek) sidebars
   // When one opens, close the conflicting ones and remember for restoration
@@ -4467,13 +4556,16 @@ export function ChatView({
     const terminalJustOpened = isTerminalSidebarOpen && !prev.terminal
     const terminalJustClosed = !isTerminalSidebarOpen && prev.terminal
 
+    // Terminal in "bottom" mode doesn't conflict with Details sidebar
+    const terminalConflictsWithDetails = terminalDisplayMode === "side-peek"
+
     // Details opened → close conflicting sidebars and remember
     if (detailsJustOpened) {
       if (isPlanOpen) {
         auto.planClosedByDetails = true
         setIsPlanSidebarOpen(false)
       }
-      if (isTerminalSidebarOpen) {
+      if (isTerminalSidebarOpen && terminalConflictsWithDetails) {
         auto.terminalClosedByDetails = true
         setIsTerminalSidebarOpen(false)
       }
@@ -4499,8 +4591,8 @@ export function ChatView({
       auto.detailsClosedBy = null
       setIsDetailsSidebarOpen(true)
     }
-    // Terminal opened → close Details and remember
-    else if (terminalJustOpened && isDetailsSidebarOpen) {
+    // Terminal opened → close Details and remember (only in side-peek mode)
+    else if (terminalJustOpened && isDetailsSidebarOpen && terminalConflictsWithDetails) {
       auto.detailsClosedBy = "terminal"
       setIsDetailsSidebarOpen(false)
     }
@@ -4520,6 +4612,7 @@ export function ChatView({
     isPlanSidebarOpen,
     currentPlanPath,
     isTerminalSidebarOpen,
+    terminalDisplayMode,
     setIsDetailsSidebarOpen,
     setIsPlanSidebarOpen,
     setIsTerminalSidebarOpen,
@@ -6348,38 +6441,6 @@ Make sure to preserve all functionality from both branches when resolving confli
     return () => window.removeEventListener("keydown", handleKeyDown, true)
   }, [isDiffSidebarOpen])
 
-  // Keyboard shortcut: Create PR (preview)
-  // Web: Opt+Cmd+P (browser uses Cmd+P for print)
-  // Desktop: Cmd+P
-  useEffect(() => {
-    const handleKeyDown = (e: KeyboardEvent) => {
-      const isDesktop = isDesktopApp()
-
-      // Desktop: Cmd+P (without Alt)
-      const isDesktopShortcut =
-        isDesktop &&
-        e.metaKey &&
-        e.code === "KeyP" &&
-        !e.altKey &&
-        !e.shiftKey &&
-        !e.ctrlKey
-      // Web: Opt+Cmd+P (with Alt)
-      const isWebShortcut = e.altKey && e.metaKey && e.code === "KeyP"
-
-      if (isDesktopShortcut || isWebShortcut) {
-        e.preventDefault()
-        e.stopPropagation()
-
-        // Only create PR if there are changes and not already creating
-        if (diffStats.hasChanges && !isCreatingPr) {
-          handleCreatePr()
-        }
-      }
-    }
-
-    window.addEventListener("keydown", handleKeyDown, true)
-    return () => window.removeEventListener("keydown", handleKeyDown, true)
-  }, [diffStats.hasChanges, isCreatingPr, handleCreatePr])
 
   // Keyboard shortcut: Cmd + Shift + E to restore archived workspace
   useEffect(() => {
@@ -6607,7 +6668,17 @@ Make sure to preserve all functionality from both branches when resolving confli
   // No early return - let the UI render with loading state handled by activeChat check below
 
   return (
+    <FileOpenProvider onOpenFile={setFileViewerPath}>
     <TextSelectionProvider>
+    {/* File Search Dialog (Cmd+P) */}
+    {worktreePath && (
+      <FileSearchDialog
+        open={fileSearchOpen}
+        onOpenChange={setFileSearchOpen}
+        projectPath={worktreePath}
+        onSelectFile={setFileViewerPath}
+      />
+    )}
     <div className="flex h-full flex-col">
       {/* Main content */}
       <div className="flex-1 overflow-hidden flex">
@@ -6645,6 +6716,7 @@ Make sure to preserve all functionality from both branches when resolving confli
                       diffStats={diffStats}
                       onOpenTerminal={onOpenTerminal}
                       canOpenTerminal={!!worktreePath}
+                      isTerminalOpen={isTerminalSidebarOpen}
                       isArchived={isArchived}
                       onRestore={handleRestoreWorkspace}
                       onOpenLocally={handleOpenLocally}
@@ -6673,6 +6745,7 @@ Make sure to preserve all functionality from both branches when resolving confli
                         diffStats={diffStats}
                         onOpenTerminal={() => setIsTerminalSidebarOpen(true)}
                         canOpenTerminal={!!worktreePath}
+                        isTerminalOpen={isTerminalSidebarOpen}
                         chatId={chatId}
                       />
                       {/* Open Locally button - desktop only, sandbox mode */}
@@ -7105,6 +7178,54 @@ Make sure to preserve all functionality from both branches when resolving confli
           </ResizableSidebar>
         )}
 
+        {/* File Viewer - opens when a file is clicked */}
+        {!isMobileFullscreen && fileViewerPath && worktreePath && fileViewerDisplayMode === "side-peek" && (
+          <ResizableSidebar
+            isOpen={!!fileViewerPath}
+            onClose={() => setFileViewerPath(null)}
+            widthAtom={fileViewerSidebarWidthAtom}
+            minWidth={350}
+            maxWidth={900}
+            side="right"
+            animationDuration={0}
+            initialWidth={0}
+            exitWidth={0}
+            showResizeTooltip={true}
+            className="bg-tl-background border-l"
+            style={{ borderLeftWidth: "0.5px" }}
+          >
+            <FileViewerSidebar
+              filePath={fileViewerPath}
+              projectPath={worktreePath}
+              onClose={() => setFileViewerPath(null)}
+            />
+          </ResizableSidebar>
+        )}
+        {fileViewerPath && worktreePath && fileViewerDisplayMode === "center-peek" && (
+          <DiffCenterPeekDialog
+            isOpen={!!fileViewerPath}
+            onClose={() => setFileViewerPath(null)}
+          >
+            <FileViewerSidebar
+              filePath={fileViewerPath}
+              projectPath={worktreePath}
+              onClose={() => setFileViewerPath(null)}
+            />
+          </DiffCenterPeekDialog>
+        )}
+        {fileViewerPath && worktreePath && fileViewerDisplayMode === "full-page" && (
+          <DiffFullPageView
+            isOpen={!!fileViewerPath}
+            onClose={() => setFileViewerPath(null)}
+          >
+            <FileViewerSidebar
+              filePath={fileViewerPath}
+              projectPath={worktreePath}
+              onClose={() => setFileViewerPath(null)}
+            />
+          </DiffFullPageView>
+        )}
+
         {/* Terminal Sidebar - shows when worktree exists (desktop only) */}
         {worktreePath && (
           <TerminalSidebar
@@ -7163,7 +7284,30 @@ Make sure to preserve all functionality from both branches when resolving confli
           />
         )}
       </div>
+
+      {/* Terminal Bottom Panel — renders below the main row when displayMode is "bottom" */}
+      {terminalDisplayMode === "bottom" && worktreePath && !isMobileFullscreen && (
+        <ResizableBottomPanel
+          isOpen={isTerminalSidebarOpen}
+          onClose={() => setIsTerminalSidebarOpen(false)}
+          heightAtom={terminalBottomHeightAtom}
+          minHeight={150}
+          maxHeight={500}
+          showResizeTooltip={true}
+          closeHotkey={toggleTerminalHotkey ?? undefined}
+          className="bg-background border-t"
+          style={{ borderTopWidth: "0.5px" }}
+        >
+          <TerminalBottomPanelContent
+            chatId={chatId}
+            cwd={worktreePath}
+            workspaceId={chatId}
+            onClose={() => setIsTerminalSidebarOpen(false)}
+          />
+        </ResizableBottomPanel>
+      )}
     </div>
     </TextSelectionProvider>
+    </FileOpenProvider>
   )
 }

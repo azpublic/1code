@@ -1,11 +1,11 @@
 import { observable } from "@trpc/server/observable"
 import { eq } from "drizzle-orm"
 import { app, BrowserWindow, safeStorage } from "electron"
-import { readFileSync } from "fs"
 import * as fs from "fs/promises"
 import * as os from "os"
-import path, { join } from "path"
+import path from "path"
 import { z } from "zod"
+import { setConnectionMethod } from "../../analytics"
 import {
   buildClaudeEnv,
   checkOfflineFallback,
@@ -16,12 +16,10 @@ import {
   type UIMessageChunk,
 } from "../../claude"
 import { getProjectMcpServers, GLOBAL_MCP_PATH, readClaudeConfig, resolveProjectPathFromWorktree, type McpServerConfig } from "../../claude-config"
-import { chats, claudeCodeCredentials, getDatabase, projects, subChats } from "../../db"
+import { chats, claudeCodeCredentials, getDatabase, subChats } from "../../db"
 import { createRollbackStash } from "../../git/stash"
 import { ensureMcpTokensFresh, fetchMcpTools, fetchMcpToolsStdio, getMcpAuthStatus, startMcpOAuth } from "../../mcp-auth"
 import { fetchOAuthMetadata, getMcpBaseUrl } from "../../oauth"
-import { setConnectionMethod } from "../../analytics"
-import { getSettingsManager } from "../../settings"
 import { publicProcedure, router } from "../index"
 import { buildAgentsOption } from "./agent-utils"
 
@@ -741,16 +739,15 @@ export const claudeRouter = router({
             }
 
             // Build full environment for Claude SDK (includes HOME, PATH, etc.)
-            const claudeEnv = buildClaudeEnv(
-              finalCustomConfig
-                ? {
-                    customEnv: {
-                      ANTHROPIC_AUTH_TOKEN: finalCustomConfig.token,
-                      ANTHROPIC_BASE_URL: finalCustomConfig.baseUrl,
-                    },
-                  }
-                : undefined,
-            )
+            const claudeEnv = buildClaudeEnv({
+              ...(finalCustomConfig && {
+                customEnv: {
+                  ANTHROPIC_AUTH_TOKEN: finalCustomConfig.token,
+                  ANTHROPIC_BASE_URL: finalCustomConfig.baseUrl,
+                },
+              }),
+              enableTasks: input.enableTasks ?? true,
+            })
 
             // Debug logging in dev
             if (process.env.NODE_ENV !== "production") {
@@ -982,6 +979,20 @@ export const claudeRouter = router({
               })
             }
 
+            // Read AGENTS.md from project root if it exists
+            let agentsMdContent: string | undefined
+            try {
+              const agentsMdPath = path.join(input.cwd, "AGENTS.md")
+              agentsMdContent = await fs.readFile(agentsMdPath, "utf-8")
+              if (agentsMdContent.trim()) {
+                console.log(`[claude] Found AGENTS.md at ${agentsMdPath} (${agentsMdContent.length} chars)`)
+              } else {
+                agentsMdContent = undefined
+              }
+            } catch {
+              // AGENTS.md doesn't exist or can't be read - that's fine
+            }
+
             // For Ollama: embed context AND history directly in prompt
             // Ollama doesn't have server-side sessions, so we must include full history
             let finalQueryPrompt: string | AsyncIterable<any> = prompt
@@ -1079,7 +1090,11 @@ IMPORTANT: When using tools, use these EXACT parameter names:
 
 When asked about the project, use Glob to find files and Read to examine them.
 Be concise and helpful.
-[/CONTEXT]
+[/CONTEXT]${agentsMdContent ? `
+
+[AGENTS.MD]
+${agentsMdContent}
+[/AGENTS.MD]` : ''}
 
 ${historyText}[CURRENT REQUEST]
 ${prompt}
@@ -1089,72 +1104,17 @@ ${prompt}
             }
 
             // System prompt config - use preset for both Claude and Ollama
-            const systemPromptConfig = {
-              type: "preset" as const,
-              preset: "claude_code" as const,
-            }
-
-            // Get permission preference from settings
-            // Priority: 1) Project-level override 2) Global default
-            const settings = getSettingsManager()
-            const isWorktreeMode = !!input.worktreePath
-
-            // First, check if the project has a permission override
-            let permissionPref: "auto" | "prompt" | "restrict" | null = null
-            if (input.projectId) {
-              const db = getDatabase()
-              const project = db
-                .select({ id: projects.id, agentPermissionLocalMode: projects.agentPermissionLocalMode, agentPermissionWorktreeMode: projects.agentPermissionWorktreeMode })
-                .from(projects)
-                .where(eq(projects.id, input.projectId))
-                .get()
-
-              if (project) {
-                permissionPref = isWorktreeMode
-                  ? (project.agentPermissionWorktreeMode as "auto" | "prompt" | "restrict" | null)
-                  : (project.agentPermissionLocalMode as "auto" | "prompt" | "restrict" | null)
-              }
-            }
-
-            // Fall back to global default if no project override
-            if (!permissionPref) {
-              permissionPref = (isWorktreeMode
-                ? settings.get("agentPermissionWorktreeMode")
-                : settings.get("agentPermissionLocalMode")) as "auto" | "prompt" | "restrict" | null
-            }
-
-            // Map preference to SDK permission mode
-            let permissionMode: "bypassPermissions" | "plan" | undefined
-            let allowDangerouslySkipPermissions: boolean | undefined
-
-            if (input.mode === "plan") {
-              // Plan mode always uses plan permissions
-              permissionMode = "plan"
-            } else {
-              // Agent mode - use configured preference
-              switch (permissionPref) {
-                case "auto":
-                  permissionMode = "bypassPermissions"
-                  allowDangerouslySkipPermissions = true
-                  console.log(`[claude] Permission mode: AUTO-APPROVE (${isWorktreeMode ? "worktree" : "local"} mode)`)
-                  break
-                case "prompt":
-                  permissionMode = undefined // Let SDK prompt for each tool
-                  allowDangerouslySkipPermissions = false
-                  console.log(`[claude] Permission mode: PROMPT (${isWorktreeMode ? "worktree" : "local"} mode)`)
-                  break
-                case "restrict":
-                  permissionMode = "plan" // Use plan mode restrictions
-                  allowDangerouslySkipPermissions = false
-                  console.log(`[claude] Permission mode: RESTRICTED (${isWorktreeMode ? "worktree" : "local"} mode)`)
-                  break
-                default:
-                  // Fallback to auto-approve for backward compatibility
-                  permissionMode = "bypassPermissions"
-                  allowDangerouslySkipPermissions = true
-                  console.log(`[claude] Permission mode: AUTO-APPROVE (fallback, ${isWorktreeMode ? "worktree" : "local"} mode)`)
-              }
-            }
+            // If AGENTS.md exists, append its content to the system prompt
+            const systemPromptConfig = agentsMdContent
+              ? {
+                  type: "preset" as const,
+                  preset: "claude_code" as const,
+                  append: `\n\n# AGENTS.md\nThe following are the project's AGENTS.md instructions:\n\n${agentsMdContent}`,
+                }
+              : {
+                  type: "preset" as const,
+                  preset: "claude_code" as const,
+                }
 
             const queryOptions = {
               prompt: finalQueryPrompt,
@@ -1167,9 +1127,12 @@ ${prompt}
                 // Pass filtered MCP servers (only working/unknown ones, skip failed/needs-auth)
                 ...(mcpServersFiltered && Object.keys(mcpServersFiltered).length > 0 && { mcpServers: mcpServersFiltered }),
                 env: finalEnv,
-                permissionMode,
-                ...(allowDangerouslySkipPermissions !== undefined && {
-                  allowDangerouslySkipPermissions,
+                permissionMode:
+                  input.mode === "plan"
+                    ? ("plan" as const)
+                    : ("bypassPermissions" as const),
+                ...(input.mode !== "plan" && {
+                  allowDangerouslySkipPermissions: true,
                 }),
                 includePartialMessages: true,
                 // Load skills from project and user directories (skip for Ollama - not supported)
@@ -1263,12 +1226,7 @@ ${prompt}
                       questions: (toolInput as any).questions,
                     } as UIMessageChunk)
 
-                    // Get interview timeout from settings (default 60s)
-                    const settings = getSettingsManager()
-                    const interviewTimeoutSeconds = settings.get("interviewTimeoutSeconds") as number | null
-                    const timeoutMs = (interviewTimeoutSeconds || 60) * 1000
-
-                    // Wait for response (configurable timeout)
+                    // Wait for response (60s timeout)
                     const response = await new Promise<{
                       approved: boolean
                       message?: string
@@ -1283,7 +1241,7 @@ ${prompt}
                           toolUseId: toolUseID,
                         } as UIMessageChunk)
                         resolve({ approved: false, message: "Timed out" })
-                      }, timeoutMs)
+                      }, 60000)
 
                       pendingToolApprovals.set(toolUseID, {
                         subChatId: input.subChatId,
@@ -1570,7 +1528,7 @@ ${prompt}
 
                 // When result arrives, assign the last assistant UUID to metadata
                 // It will be emitted as part of the merged message-metadata chunk below
-                if (msgAny.type === "result" && historyEnabled && lastAssistantUuid) {
+                if (msgAny.type === "result" && historyEnabled && lastAssistantUuid && !abortController.signal.aborted) {
                   metadata.sdkMessageUuid = lastAssistantUuid
                 }
 
@@ -1898,6 +1856,8 @@ ${prompt}
               parts.push({ type: "text", text: currentText })
             }
 
+            const savedSessionId = metadata.sessionId
+
             if (parts.length > 0) {
               const assistantMessage = {
                 id: crypto.randomUUID(),
@@ -1911,7 +1871,7 @@ ${prompt}
               db.update(subChats)
                 .set({
                   messages: JSON.stringify(finalMessages),
-                  sessionId: metadata.sessionId,
+                  sessionId: savedSessionId,
                   streamId: null,
                   updatedAt: new Date(),
                 })
@@ -1921,7 +1881,7 @@ ${prompt}
               // No assistant response - just clear streamId
               db.update(subChats)
                 .set({
-                  sessionId: metadata.sessionId,
+                  sessionId: savedSessionId,
                   streamId: null,
                   updatedAt: new Date(),
                 })
@@ -1962,14 +1922,13 @@ ${prompt}
           activeSessions.delete(input.subChatId)
           clearPendingApprovals("Session ended.", input.subChatId)
 
-          // Save sessionId on abort so conversation can be resumed
-          // Clear streamId since we're no longer streaming
+          // Clear streamId since we're no longer streaming.
+          // sessionId is NOT saved here — the save block in the async function
+          // handles it (saves on normal completion, clears on abort). This avoids
+          // a redundant DB write that the cancel mutation would then overwrite.
           const db = getDatabase()
           db.update(subChats)
-            .set({
-              streamId: null,
-              ...(currentSessionId && { sessionId: currentSessionId })
-            })
+            .set({ streamId: null })
             .where(eq(subChats.id, input.subChatId))
             .run()
         }
@@ -2030,9 +1989,10 @@ ${prompt}
         controller.abort()
         activeSessions.delete(input.subChatId)
         clearPendingApprovals("Session cancelled.", input.subChatId)
-        return { cancelled: true }
       }
-      return { cancelled: false }
+
+
+      return { cancelled: !!controller }
     }),
 
   /**

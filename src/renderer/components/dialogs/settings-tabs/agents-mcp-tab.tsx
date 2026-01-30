@@ -224,11 +224,6 @@ export function AgentsMcpTab() {
     }
   }, [refetch])
 
-  // Refresh on every tab access (component mount)
-  useEffect(() => {
-    handleRefresh(true)
-  }, [handleRefresh])
-
   const handleAuth = async (serverName: string, projectPath: string | null) => {
     try {
       // Use "__global__" marker for global MCP servers

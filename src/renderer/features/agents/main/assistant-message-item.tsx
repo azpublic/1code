@@ -2,7 +2,7 @@
 
 import { useAtomValue } from "jotai"
 import { ListTree } from "lucide-react"
-import { memo, useCallback, useMemo, useState } from "react"
+import { memo, useCallback, useContext, useMemo, useState } from "react"
 
 import { CollapseIcon, ExpandIcon, IconTextUndo, PlanIcon } from "../../../components/ui/icons"
 import { TextShimmer } from "../../../components/ui/text-shimmer"
@@ -34,6 +34,7 @@ import {
   PlayButton,
   getMessageTextContent,
 } from "../ui/message-action-buttons"
+import { useFileOpen } from "../mentions"
 import { MemoizedTextPart } from "./memoized-text-part"
 
 // Exploring tools - these get grouped when 3+ consecutive
@@ -278,7 +279,8 @@ export const AssistantMessageItem = memo(function AssistantMessageItem({
   const onRollback = useAtomValue(rollbackHandlerAtom)
   const isRollingBack = useAtomValue(isRollingBackAtom)
   const showMessageJson = useAtomValue(showMessageJsonAtom)
-  const isDev = import.meta.env.DEV
+    const onOpenFile = useFileOpen()
+    const isDev = import.meta.env.DEV
   const messageParts = message?.parts || []
 
   const contentParts = useMemo(() =>
@@ -577,14 +579,20 @@ export const AssistantMessageItem = memo(function AssistantMessageItem({
     if (part.type in AgentToolRegistry) {
       const meta = AgentToolRegistry[part.type]
       const { isPending, isError } = getToolStatus(part, status)
+      // Make Read tool clickable to open file in viewer
+      const handleClick = part.type === "tool-Read" && onOpenFile && part.input?.file_path
+        ? () => onOpenFile(part.input.file_path)
+        : undefined
       return (
         <AgentToolCall
           key={idx}
           icon={meta.icon}
           title={meta.title(part)}
           subtitle={meta.subtitle?.(part)}
+          tooltipContent={meta.tooltipContent?.(part)}
           isPending={isPending}
           isError={isError}
+          onClick={handleClick}
         />
       )
     }
@@ -611,7 +619,9 @@ export const AssistantMessageItem = memo(function AssistantMessageItem({
         {shouldCollapse && visibleStepsCount > 0 && (
           <CollapsibleSteps stepsCount={visibleStepsCount}>
             {(() => {
-              const grouped = groupExploringTools(stepParts, nestedToolIds)
+              // Apply both grouping functions: first task tools, then exploring tools
+              const taskGrouped = groupTaskTools(stepParts, nestedToolIds)
+              const grouped = groupExploringTools(taskGrouped, nestedToolIds)
               return grouped.map((part: any, idx: number) => {
                 if (part.type === "exploring-group") {
                   const isLast = idx === grouped.length - 1

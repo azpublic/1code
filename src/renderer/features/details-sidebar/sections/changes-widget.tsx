@@ -1,7 +1,7 @@
 "use client"
 
-import { memo, useCallback, useState, useEffect } from "react"
-import { useAtom } from "jotai"
+import { memo, useCallback, useMemo, useState, useEffect } from "react"
+import { useAtom, useAtomValue, useSetAtom } from "jotai"
 import { Button } from "@/components/ui/button"
 import { Checkbox } from "@/components/ui/checkbox"
 import { ArrowUpRight, ChevronDown, Check } from "lucide-react"
@@ -20,7 +20,7 @@ import {
 import { Kbd } from "@/components/ui/kbd"
 import { cn } from "@/lib/utils"
 import { useResolvedHotkeyDisplay } from "@/lib/hotkeys"
-import { viewedFilesAtomFamily } from "@/features/agents/atoms"
+import { viewedFilesAtomFamily, fileViewerOpenAtomFamily, diffSidebarOpenAtomFamily } from "@/features/agents/atoms"
 import {
   FileListItem,
   getFileName,
@@ -29,7 +29,6 @@ import {
 import { trpc } from "@/lib/trpc"
 import { toast } from "sonner"
 import { useQueryClient } from "@tanstack/react-query"
-import { useAtomValue } from "jotai"
 import {
   selectedOllamaModelAtom,
   customClaudeConfigAtom,
@@ -42,6 +41,8 @@ import {
   type ApiFormat,
 } from "@/lib/atoms"
 import { appStore } from "@/lib/jotai-store"
+import { preferredEditorAtom } from "@/lib/atoms"
+import { APP_META } from "../../../../shared/external-apps"
 import type { ParsedDiffFile } from "../types"
 
 // Action type for the dropdown button
@@ -129,6 +130,24 @@ export const ChangesWidget = memo(function ChangesWidget({
 
   // Mutations for context menu actions
   const openInFinderMutation = trpc.external.openInFinder.useMutation()
+  const openInAppMutation = trpc.external.openInApp.useMutation()
+
+  // Preferred editor
+  const preferredEditor = useAtomValue(preferredEditorAtom)
+  const editorMeta = APP_META[preferredEditor]
+  // File viewer (file preview sidebar)
+  const fileViewerAtom = useMemo(
+    () => fileViewerOpenAtomFamily(chatId),
+    [chatId],
+  )
+  const setFileViewerPath = useSetAtom(fileViewerAtom)
+
+  // Diff sidebar state (to close dialog/fullscreen when opening file preview)
+  const diffSidebarAtom = useMemo(
+    () => diffSidebarOpenAtomFamily(chatId),
+    [chatId],
+  )
+  const setDiffSidebarOpen = useSetAtom(diffSidebarAtom)
 
   // Mutations for direct commit
   const generateCommitMutation = trpc.chats.generateCommitMessage.useMutation()
@@ -191,19 +210,13 @@ export const ChangesWidget = memo(function ChangesWidget({
     }
   }, [displayFiles.length])
 
-  // Check if file is marked as viewed
-  const isFileMarkedAsViewed = useCallback(
-    (filePath: string): boolean => {
-      const possibleKeys = [
-        `${filePath}->${filePath}`, // Modified
-        `/dev/null->${filePath}`, // New file
-        `${filePath}->/dev/null`, // Deleted file
-      ]
-      for (const key of possibleKeys) {
-        const viewedState = viewedFiles[key]
-        if (viewedState?.viewed) {
-          return true
-        }
+  // Check if file is marked as viewed using its diff key directly
+  const isFileViewed = useCallback(
+    (file: ParsedDiffFile): boolean => {
+      // Use the actual key from the parsed diff (oldPath->newPath) for exact match
+      const viewedState = viewedFiles[file.key]
+      if (viewedState?.viewed) {
+        return true
       }
       return false
     },
@@ -428,7 +441,7 @@ export const ChangesWidget = memo(function ChangesWidget({
                     dirPath={getFileDir(filePath)}
                     status={getFileStatus(file)}
                     isChecked={selectedForCommit.has(filePath)}
-                    isViewed={isFileMarkedAsViewed(filePath)}
+                    isViewed={isFileViewed(file)}
                     isUntracked={file.isNewFile ?? false}
                     showContextMenu={!!worktreePath}
                     onSelect={() => {
@@ -448,6 +461,16 @@ export const ChangesWidget = memo(function ChangesWidget({
                     onRevealInFinder={absolutePath ? () => {
                       openInFinderMutation.mutate(absolutePath)
                     } : undefined}
+                    onOpenInFilePreview={absolutePath ? () => {
+                      setFileViewerPath(absolutePath)
+                      if (diffDisplayMode !== "side-peek") {
+                        setDiffSidebarOpen(false)
+                      }
+                    } : undefined}
+                    onOpenInEditor={absolutePath ? () => {
+                      openInAppMutation.mutate({ path: absolutePath, app: preferredEditor })
+                    } : undefined}
+                    editorLabel={editorMeta.label}
                   />
                 )
               })}
