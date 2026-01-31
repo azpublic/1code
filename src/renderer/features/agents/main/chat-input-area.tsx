@@ -60,6 +60,7 @@ import {
 } from "../mentions"
 import { AgentContextIndicator, type MessageTokenData } from "../ui/agent-context-indicator"
 import { AgentDiffTextContextItem } from "../ui/agent-diff-text-context-item"
+import { TemplateSelectorPopover } from "../components/template-selector-popover"
 import { AgentFileItem } from "../ui/agent-file-item"
 import { AgentImageItem } from "../ui/agent-image-item"
 import { AgentPastedTextItem } from "../ui/agent-pasted-text-item"
@@ -438,6 +439,9 @@ export const ChatInputArea = memo(function ChatInputArea({
   // Model dropdown state
   const [isModelDropdownOpen, setIsModelDropdownOpen] = useState(false)
   const [lastSelectedModelId, setLastSelectedModelId] = useAtom(lastSelectedModelIdAtom)
+
+  // Template selector state
+  const [templateSelectorOpen, setTemplateSelectorOpen] = useState(false)
   const [selectedOllamaModel, setSelectedOllamaModel] = useAtom(selectedOllamaModelAtom)
   const availableModels = useAvailableModels(modelProviderId)
   const autoOfflineMode = useAtomValue(autoOfflineModeAtom)
@@ -706,6 +710,20 @@ export const ChatInputArea = memo(function ChatInputArea({
       window.removeEventListener("keyup", handleKeyUp, true)
     }
   }, [voiceInputHotkey, isVoiceRecording, isTranscribing, isStreaming, handleVoiceMouseDown, handleVoiceMouseUp])
+
+  // Keyboard shortcut: Cmd+Shift+T to open template selector
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if ((e.metaKey || e.ctrlKey) && e.shiftKey && e.key === "t") {
+        e.preventDefault()
+        e.stopPropagation()
+        setTemplateSelectorOpen(true)
+      }
+    }
+
+    window.addEventListener("keydown", handleKeyDown, true)
+    return () => window.removeEventListener("keydown", handleKeyDown, true)
+  }, [])
 
   // Save draft on blur (with attachments and text contexts)
   const handleEditorBlur = useCallback(async () => {
@@ -1446,6 +1464,19 @@ export const ChatInputArea = memo(function ChatInputArea({
                       >
                         <AttachIcon className="h-4 w-4" />
                       </Button>
+
+                      {/* Template selector button */}
+                      <TemplateSelectorPopover
+                        isOpen={templateSelectorOpen}
+                        onOpenChange={setTemplateSelectorOpen}
+                        onSelectTemplate={(templateId, content) => {
+                          const current = editorRef.current?.getValue() || ""
+                          const needsSpace = current.length > 0 && !/\s$/.test(current)
+                          const newValue = current + (needsSpace ? "\n" : "") + content + "\n"
+                          editorRef.current?.setValue(newValue)
+                          editorRef.current?.focus()
+                        }}
+                      />
                     </>
                   )}
 

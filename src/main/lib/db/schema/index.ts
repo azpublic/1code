@@ -171,6 +171,31 @@ export const tasksRelations = relations(tasks, ({ one }) => ({
   }),
 }))
 
+// ============ PROMPT TEMPLATES ============
+export const promptTemplates = sqliteTable("prompt_templates", {
+  id: text("id")
+    .primaryKey()
+    .$defaultFn(() => createId()),
+  title: text("title").notNull(),
+  content: text("content").notNull(),
+  category: text("category"),
+  createdAt: integer("created_at", { mode: "timestamp" }).$defaultFn(
+    () => new Date(),
+  ),
+  updatedAt: integer("updated_at", { mode: "timestamp" }).$defaultFn(
+    () => new Date(),
+  ),
+  lastUsedAt: integer("last_used_at", { mode: "timestamp" }),
+  usageCount: integer("usage_count").notNull().default(0),
+}, (table) => [
+  index("prompt_templates_category_idx").on(table.category),
+  index("prompt_templates_last_used_idx").on(table.lastUsedAt),
+])
+
+export const promptTemplatesRelations = relations(promptTemplates, ({}) => ({
+  // No relations - templates are standalone
+}))
+
 // ============ TYPE EXPORTS ============
 export type Project = typeof projects.$inferSelect
 export type NewProject = typeof projects.$inferInsert
@@ -185,3 +210,5 @@ export type NewClaudeCodeCredential = typeof claudeCodeCredentials.$inferInsert
 export type AnthropicAccount = typeof anthropicAccounts.$inferSelect
 export type NewAnthropicAccount = typeof anthropicAccounts.$inferInsert
 export type AnthropicSettings = typeof anthropicSettings.$inferSelect
+export type PromptTemplate = typeof promptTemplates.$inferSelect
+export type NewPromptTemplate = typeof promptTemplates.$inferInsert
