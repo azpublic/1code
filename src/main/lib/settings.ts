@@ -94,11 +94,17 @@ export class SettingsManager {
       return
     }
 
+    // DIAGNOSTIC: Capture call stack to identify what's triggering saves
+    const stack = new Error().stack
+    console.log('[Settings] SCHEDULE WRITE - Call stack:', stack?.split('\n').slice(2, 6).join('\n'))
+
     this.savePromise = (async () => {
       // Debounce: wait 100ms before writing
       await new Promise((resolve) => setTimeout(resolve, 100))
 
       try {
+        // DIAGNOSTIC: Log what's actually being written
+        console.log('[Settings] SAVING - Keys:', Object.keys(this.cache).join(', '))
         await fs.writeFile(SETTINGS_PATH, JSON.stringify(this.cache, null, 2), 'utf-8')
         console.log('[Settings] Saved settings to', SETTINGS_PATH)
       } catch (error) {

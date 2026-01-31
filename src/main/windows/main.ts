@@ -567,11 +567,16 @@ export function createWindow(options?: { chatId?: string; subChatId?: string }):
   )
 
   // Setup tRPC IPC handler (singleton pattern)
+  // DIAGNOSTIC: Log listener count before creating IPC handler
+  console.log('[tRPC] Creating IPC handler - current listener count:', ipcMain.listenerCount('message'))
+
   if (ipcHandler) {
     // Reuse existing handler, just attach new window
+    console.log('[tRPC] Reusing existing handler, attaching new window')
     ipcHandler.attachWindow(window)
   } else {
     // Create new handler with context
+    console.log('[tRPC] Creating new handler')
     ipcHandler = createIPCHandler({
       router: createAppRouter(getWindow),
       windows: [window],
@@ -579,6 +584,7 @@ export function createWindow(options?: { chatId?: string; subChatId?: string }):
         getWindow,
       }),
     })
+    console.log('[tRPC] Handler created - listener count after:', ipcMain.listenerCount('message'))
   }
 
   // Show window when ready

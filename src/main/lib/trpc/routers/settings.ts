@@ -203,6 +203,9 @@ export const settingsRouter = router({
       })
     )
     .mutation(async ({ input }) => {
+      // DIAGNOSTIC: Log who is calling settings.set
+      console.log('[SettingsRouter] SET called - key:', input.key, 'value type:', typeof input.value)
+      console.log('[SettingsRouter] Call stack:', new Error().stack?.split('\n').slice(2, 7).join('\n'))
       await getSettingsManager().set(input.key, input.value)
       return { success: true }
     }),

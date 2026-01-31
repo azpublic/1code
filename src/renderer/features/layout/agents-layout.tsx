@@ -85,9 +85,6 @@ export function AgentsLayout() {
     return unsubscribe
   }, [isDesktop, setIsFullscreen])
 
-  // Check for updates on mount and periodically
-  useUpdateChecker()
-
   const [sidebarOpen, setSidebarOpen] = useAtom(agentsSidebarOpenAtom)
   const [sidebarWidth, setSidebarWidth] = useAtom(agentsSidebarWidthAtom)
   const [settingsOpen, setSettingsOpen] = useAtom(agentsSettingsDialogOpenAtom)

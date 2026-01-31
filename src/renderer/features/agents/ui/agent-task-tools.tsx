@@ -1,7 +1,7 @@
 "use client"
 
 import { ChevronsUpDown } from "lucide-react"
-import { memo, useMemo, useState } from "react"
+import { memo, useEffect, useMemo, useState } from "react"
 import { useSetAtom } from "jotai"
 import { CheckIcon, PlanIcon } from "../../../components/ui/icons"
 import { TextShimmer } from "../../../components/ui/text-shimmer"

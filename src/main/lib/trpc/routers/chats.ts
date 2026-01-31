@@ -1,3 +1,4 @@
+import { omit } from 'lodash-es';
 import { and, desc, eq, inArray, isNotNull, isNull } from "drizzle-orm"
 import * as fs from "fs/promises"
 import * as path from "path"
@@ -29,7 +30,7 @@ import {
   checkOfflineFallback,
   getBundledClaudeBinaryPath,
 } from "../../claude"
-import { openAIChatCompletion } from "../../openai-chat"
+import {openAIChatCompletion, OpenAIChatOptions} from "../../openai-chat"
 
 // Fallback to truncated user message if AI generation fails
 function getFallbackName(userMessage: string): string {
@@ -1069,6 +1070,10 @@ export const chatsRouter = router({
   getParsedDiff: publicProcedure
     .input(z.object({ chatId: z.string() }))
     .query(async ({ input }) => {
+      // DIAGNOSTIC: Log who called getParsedDiff
+      console.log('[getParsedDiff] CALLED - chatId:', input.chatId)
+      console.log('[getParsedDiff] Call stack:', new Error().stack?.split('\n').slice(2, 6).join('\n'))
+
       const db = getDatabase()
       const chat = db
         .select()
@@ -1462,6 +1467,9 @@ Commit message:`
       return { message }
     }),
 
+
+
+
   /**
    * Generate a name for a sub-chat using AI
    * Uses Claude Code SDK as primary, Ollama as offline fallback
@@ -1529,29 +1537,40 @@ Commit message:`
         if (input.apiFormat === "openai" && input.model && (input.token || input.hasToken) && input.baseUrl) {
           console.log("[generateSubChatName] Using OpenAI-style API for chat name generation")
           try {
-            const result = await openAIChatCompletion({
-              systemPrompt: `You are a title generator. Generate a very short (2-5 words) title for a coding chat based on the user's message.
-Return your response as a JSON object with this exact format:
-{
-  "title": "short title here"
-}
 
-Rules:
-- Keep titles to 2-5 words maximum
-- Be concise and descriptive
-- No quotes around the title
-- No explanations or extra text
-- Only valid JSON output`,
-              prompt: `Generate a title for this coding chat message:\n\n"${input.userMessage.slice(0, 500)}"`,
-              model: input.model,
-              apiKey: input.token || "dummy", // Some local providers don't need a real token
-              baseUrl: input.baseUrl,
-              maxTokens: 500,
-              temperature: 0.7,
-              responseFormat: { type: "json_object" },
-            })
+            const promptPayload :OpenAIChatOptions = {
+                          systemPrompt: `You are a title generator. Generate a very short (2-5 words) title for a coding chat based on the user's message.
+            Return your response as a JSON object with this exact format:
+            {
+              "title": "short title here"
+            }
+            
+            Rules:
+            - Keep titles to 2-5 words maximum
+            - Be concise and descriptive
+            - No quotes around the title
+            - No explanations or extra text
+            - Only valid JSON output`,
+                          prompt: `Generate a title for this coding chat message:\n\n"${input.userMessage.slice(0, 500)}"`,
+                          model: input.model,
+                          apiKey: input.token || "dummy", // Some local providers don't need a real token
+                          baseUrl: input.baseUrl,
+                          maxTokens: 500,
+                          temperature: 0.7,
+                          responseFormat: { type: "json_object" },
+             };
+
+            // let ppcopy = promptPayload;
+            // ppcopy.apiKey = "[redacted]";
+            // console.log("[generateSubChatName] OpenAI paylod for subchat name generation : ", ppcopy);
+
+            const result = await openAIChatCompletion(promptPayload);
+
+            console.log("[generateSubChatName] OpenAI-style API result:", result);
+
             // Result is an object when using JSON mode
             const parsedResult = result as { title?: string }
+
             const name = parsedResult.title?.trim()
             if (name) {
               console.log("[generateSubChatName] Generated name via OpenAI-style API (JSON):", name)

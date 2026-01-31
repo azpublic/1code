@@ -71,6 +71,11 @@ export function createSettingsStorage<T>() {
     },
 
     setItem: (key: string, value: string) => {
+      // DIAGNOSTIC: Log atom write
+      console.log('[SettingsStorage] setItem CALLED - key:', key)
+      const stack = new Error().stack?.split('\n').slice(2, 5).join('\n')
+      console.log('[SettingsStorage] Call stack:', stack)
+
       // 1. Always update localStorage (fast, local fallback)
       try {
         localStorage.setItem(key, value)
@@ -84,6 +89,7 @@ export function createSettingsStorage<T>() {
         updateCache(key, parsed)
 
         // 3. Write to settings.json via main process (async, non-blocking)
+        console.log('[SettingsStorage] Calling trpcClient.settings.set.mutate for key:', key)
         trpcClient.settings.set
           .mutate({ key, value: parsed })
           .catch((err) => {

@@ -101,8 +101,8 @@ function registerIpcHandlers() {
   })
 
   // Set auto-update check enabled state - no-op since disabled
-  ipcMain.handle("update:set-auto-check", (_event, _enabled: boolean) => {
-    log.info("[AutoUpdater] Auto-updater disabled - ignoring set-auto-check")
+  ipcMain.handle("update:set-auto-check", () => {
+    // Silently ignore - auto-updater is disabled
     return { success: false, enabled: false }
   })
 

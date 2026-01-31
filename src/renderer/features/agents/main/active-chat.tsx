@@ -81,8 +81,6 @@ import {
 import { useFileChangeListener, useGitWatcher } from "../../../lib/hooks/use-file-change-listener"
 import { useRemoteChat } from "../../../lib/hooks/use-remote-chats"
 import { remoteApi } from "../../../lib/remote-api"
-import { useFileChangeListener, useGitWatcher } from "../../../lib/hooks/use-file-change-listener"
-import { useRemoteChat } from "../../../lib/hooks/use-remote-chats"
 import { useResolvedHotkeyDisplay } from "../../../lib/hotkeys"
 import { appStore } from "../../../lib/jotai-store"
 import { api } from "../../../lib/mock-api"
@@ -94,13 +92,6 @@ import { DiffCenterPeekDialog } from "../../changes/components/diff-center-peek-
 import { DiffFullPageView } from "../../changes/components/diff-full-page-view"
 import { DiffSidebarHeader } from "../../changes/components/diff-sidebar-header"
 import { getStatusIndicator } from "../../changes/utils/status"
-import {
-  detailsSidebarOpenAtom,
-  unifiedSidebarEnabledAtom,
-} from "../../details-sidebar/atoms"
-import { DetailsSidebar } from "../../details-sidebar/details-sidebar"
-import { terminalSidebarOpenAtomFamily } from "../../terminal/atoms"
-import { TerminalSidebar } from "../../terminal/terminal-sidebar"
 import {
   detailsSidebarOpenAtom,
   unifiedSidebarEnabledAtom,
@@ -156,7 +147,6 @@ import {
   subChatFilesAtom,
   subChatModeAtomFamily,
   undoStackAtom,
-  workspaceDiffCacheAtomFamily,
   workspaceDiffCacheAtomFamily,
   type AgentMode,
   type SelectedCommit

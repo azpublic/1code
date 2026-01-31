@@ -53,8 +53,13 @@ export function useGitWatcher(worktreePath: string | null | undefined) {
 
     // Listen for git status changes from the watcher
     const cleanup = window.desktopApi?.onGitStatusChanged((data) => {
+      // DIAGNOSTIC: Log git watcher event received
+      console.log('[useGitWatcher] GIT STATUS CHANGED - worktree:', data.worktreePath, 'changes:', data.changes.length)
+      console.log('[useGitWatcher] Call stack:', new Error().stack?.split('\n').slice(2, 5).join('\n'))
+
       if (data.worktreePath === worktreePath) {
-        // Invalidate git status queries to trigger refetch
+        // DIAGNOSTIC: About to invalidate queries
+        console.log('[useGitWatcher] Invalidating getStatus queries')
         queryClient.invalidateQueries({
           queryKey: [["changes", "getStatus"]],
         })
@@ -64,6 +69,7 @@ export function useGitWatcher(worktreePath: string | null | undefined) {
           (change) => change.type === "change" || change.type === "add"
         )
         if (hasModifiedFiles) {
+          console.log('[useGitWatcher] Invalidating getParsedDiff queries')
           queryClient.invalidateQueries({
             queryKey: [["changes", "getParsedDiff"]],
           })

@@ -1,5 +1,5 @@
 import { useAtom } from "jotai"
-import { useEffect, useState } from "react"
+import { useEffect, useRef, useState } from "react"
 import {
   agentPermissionLocalModeAtom,
   agentPermissionWorktreeModeAtom,
@@ -202,8 +202,18 @@ export function AgentsPreferencesTab() {
     }
   }
 
-  // Sync default worktree location to main process whenever it changes
+  // Track initial values to prevent sync on mount
+  const initialWorktreeLocationRef = useRef(defaultWorktreeBaseLocation)
+  const initialInterviewTimeoutRef = useRef(interviewTimeoutSeconds)
+  const initialAgentPermissionLocalRef = useRef(agentPermissionLocal)
+  const initialAgentPermissionWorktreeRef = useRef(agentPermissionWorktree)
+
+  // Sync default worktree location to main process whenever it changes (but not on mount)
   useEffect(() => {
+    // Skip on first render (mount)
+    if (defaultWorktreeBaseLocation === initialWorktreeLocationRef.current) {
+      return
+    }
     const syncToMainProcess = async () => {
       if (defaultWorktreeBaseLocation) {
         try {
@@ -218,10 +228,16 @@ export function AgentsPreferencesTab() {
       }
     }
     syncToMainProcess()
+    // Update ref to current value
+    initialWorktreeLocationRef.current = defaultWorktreeBaseLocation
   }, [defaultWorktreeBaseLocation])
 
-  // Sync interview timeout to main process whenever it changes
+  // Sync interview timeout to main process whenever it changes (but not on mount)
   useEffect(() => {
+    // Skip on first render (mount)
+    if (interviewTimeoutSeconds === initialInterviewTimeoutRef.current) {
+      return
+    }
     const syncToMainProcess = async () => {
       try {
         await setSettingMutation.mutateAsync({
@@ -234,10 +250,17 @@ export function AgentsPreferencesTab() {
       }
     }
     syncToMainProcess()
+    // Update ref to current value
+    initialInterviewTimeoutRef.current = interviewTimeoutSeconds
   }, [interviewTimeoutSeconds])
 
-  // Sync agent permission settings to main process whenever they change
+  // Sync agent permission settings to main process whenever they change (but not on mount)
   useEffect(() => {
+    // Skip on first render (mount)
+    if (agentPermissionLocal === initialAgentPermissionLocalRef.current &&
+        agentPermissionWorktree === initialAgentPermissionWorktreeRef.current) {
+      return
+    }
     const syncToMainProcess = async () => {
       try {
         await Promise.all([
@@ -256,6 +279,9 @@ export function AgentsPreferencesTab() {
       }
     }
     syncToMainProcess()
+    // Update refs to current values
+    initialAgentPermissionLocalRef.current = agentPermissionLocal
+    initialAgentPermissionWorktreeRef.current = agentPermissionWorktree
   }, [agentPermissionLocal, agentPermissionWorktree])
 
   return (

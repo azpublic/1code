@@ -16,12 +16,8 @@ import {
 } from "./features/onboarding"
 import { identify, initAnalytics, shutdown } from "./lib/analytics"
 import {
-  agentPermissionLocalModeAtom,
-  agentPermissionWorktreeModeAtom,
   anthropicOnboardingCompletedAtom, apiKeyOnboardingCompletedAtom,
   billingMethodAtom,
-  defaultWorktreeBaseLocationAtom,
-  interviewTimeoutSecondsAtom,
 } from "./lib/atoms"
 import { appStore } from "./lib/jotai-store"
 import { VSCodeThemeProvider } from "./lib/themes/theme-provider"
@@ -126,61 +122,9 @@ function AppContent() {
   const apiKeyOnboardingCompleted = useAtomValue(apiKeyOnboardingCompletedAtom)
   const selectedProject = useAtomValue(selectedProjectAtom)
   const setSelectedChatId = useSetAtom(selectedAgentChatIdAtom)
-  const defaultWorktreeBaseLocation = useAtomValue(defaultWorktreeBaseLocationAtom)
-  const interviewTimeoutSeconds = useAtomValue(interviewTimeoutSecondsAtom)
-  const agentPermissionLocal = useAtomValue(agentPermissionLocalModeAtom)
-  const agentPermissionWorktree = useAtomValue(agentPermissionWorktreeModeAtom)
   const setActiveSubChat = useAgentSubChatStore((s) => s.setActiveSubChat)
   const addToOpenSubChats = useAgentSubChatStore((s) => s.addToOpenSubChats)
   const setChatId = useAgentSubChatStore((s) => s.setChatId)
-
-  // Sync default worktree location and interview timeout to main process on app startup
-  const settingsSetMutation = trpc.settings.set.useMutation()
-  useEffect(() => {
-    const syncSettings = async () => {
-      // Sync default worktree location
-      if (defaultWorktreeBaseLocation) {
-        try {
-          await settingsSetMutation.mutateAsync({
-            key: "defaultWorktreeBaseLocation",
-            value: defaultWorktreeBaseLocation,
-          })
-          console.log("[App] Synced default worktree location to main process:", defaultWorktreeBaseLocation)
-        } catch (error) {
-          console.error("[App] Failed to sync default worktree location:", error)
-        }
-      }
-      // Sync interview timeout
-      try {
-        await settingsSetMutation.mutateAsync({
-          key: "interviewTimeoutSeconds",
-          value: interviewTimeoutSeconds,
-        })
-        console.log("[App] Synced interview timeout to main process:", interviewTimeoutSeconds)
-      } catch (error) {
-        console.error("[App] Failed to sync interview timeout:", error)
-      }
-      // Sync agent permission settings
-      try {
-        await Promise.all([
-          settingsSetMutation.mutateAsync({
-            key: "agentPermissionLocalMode",
-            value: agentPermissionLocal,
-          }),
-          settingsSetMutation.mutateAsync({
-            key: "agentPermissionWorktreeMode",
-            value: agentPermissionWorktree,
-          }),
-        ])
-        console.log("[App] Synced agent permission settings to main process:", { agentPermissionLocal, agentPermissionWorktree })
-      } catch (error) {
-        console.error("[App] Failed to sync agent permission settings:", error)
-      }
-    }
-    syncSettings()
-    // Only run once on mount
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [])
 
   // Apply initial window params (chatId/subChatId) when opening via "Open in new window"
   useEffect(() => {

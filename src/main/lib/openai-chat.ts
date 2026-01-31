@@ -100,6 +100,9 @@ export async function openAIChatCompletion(
       max_tokens: maxTokens,
     }
 
+
+    console.log("[OpenAIChat] requestBody:", requestBody);
+
     // Add response_format if specified (for structured JSON output)
     if (responseFormat) {
       requestBody.response_format = responseFormat

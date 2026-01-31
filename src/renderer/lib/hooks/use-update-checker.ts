@@ -131,24 +131,7 @@ export function useUpdateChecker() {
   // Note: Periodic checks removed - main process now checks on window focus
   // This is more natural UX and avoids unnecessary network requests
 
-  // Sync auto-update check setting with main process
-  const autoUpdateCheckEnabled = useAtomValue(autoUpdateCheckEnabledAtom)
-  useEffect(() => {
-    const api = window.desktopApi
-    if (!api) return
-
-    // Set initial value on mount (only in production, handler not available in dev)
-    if (import.meta.env.PROD) {
-      api.setAutoUpdateCheckEnabled?.(autoUpdateCheckEnabled).catch((err) => {
-        console.warn("[Update] Failed to set auto-update check enabled:", err)
-      })
-    }
-
-    // Update when setting changes (only log in production)
-    if (import.meta.env.PROD) {
-      console.log("[Update] Auto-update check", autoUpdateCheckEnabled ? "enabled" : "disabled")
-    }
-  }, [autoUpdateCheckEnabled])
+  // Note: Auto-updater is disabled - no sync needed with main process
 
   // Actions
   const checkForUpdates = useCallback(() => {
