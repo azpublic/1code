@@ -6,7 +6,6 @@ import { useIsMobile } from "../../lib/hooks/use-mobile"
 import {
   agentsSidebarOpenAtom,
   agentsSidebarWidthAtom,
-  agentsSettingsDialogOpenAtom,
   agentsSettingsDialogActiveTabAtom,
   isDesktopAtom,
   isFullscreenAtom,
@@ -20,7 +19,6 @@ import { selectedAgentChatIdAtom, selectedProjectAtom, selectedDraftIdAtom, show
 import { trpc } from "../../lib/trpc"
 import { useAgentsHotkeys } from "../agents/lib/agents-hotkeys-manager"
 import { toggleSearchAtom } from "../agents/search"
-import { AgentsSettingsDialog } from "../../components/dialogs/agents-settings-dialog"
 import { ClaudeLoginModal } from "../../components/dialogs/claude-login-modal"
 import { TooltipProvider } from "../../components/ui/tooltip"
 import { ResizableSidebar } from "../../components/ui/resizable-sidebar"
@@ -32,6 +30,7 @@ import { WindowsTitleBar } from "../../components/windows-title-bar"
 import { useUpdateChecker } from "../../lib/hooks/use-update-checker"
 import { useAgentSubChatStore } from "../agents/stores/sub-chat-store"
 import { QueueProcessor } from "../agents/components/queue-processor"
+import { SettingsSidebar } from "../settings/settings-sidebar"
 
 // ============================================================================
 // Constants
@@ -90,6 +89,7 @@ export function AgentsLayout() {
   const [settingsOpen, setSettingsOpen] = useAtom(agentsSettingsDialogOpenAtom)
   const [tasksSidebarOpen, setTasksSidebarOpen] = useAtom(tasksSidebarOpenAtom)
   const setSettingsActiveTab = useSetAtom(agentsSettingsDialogActiveTabAtom)
+  const desktopView = useAtomValue(desktopViewAtom)
   const setFileSearchDialogOpen = useSetAtom(fileSearchDialogOpenAtom)
   const [selectedChatId, setSelectedChatId] = useAtom(selectedAgentChatIdAtom)
   const [selectedProject, setSelectedProject] = useAtom(selectedProjectAtom)
@@ -228,7 +228,6 @@ export function AgentsLayout() {
     setShowNewChatForm,
     setDesktopView,
     setSidebarOpen,
-    setSettingsDialogOpen: setSettingsOpen,
     setSettingsActiveTab,
     setFileSearchDialogOpen,
     toggleChatSearch,
@@ -246,20 +245,18 @@ export function AgentsLayout() {
     setTasksSidebarOpen(false)
   }, [setTasksSidebarOpen])
 
+  const isSettingsView = desktopView === "settings"
+
   return (
     <TooltipProvider delayDuration={300}>
       {/* Global queue processor - handles message queues for all sub-chats */}
       <QueueProcessor />
-      <AgentsSettingsDialog
-        isOpen={settingsOpen}
-        onClose={() => setSettingsOpen(false)}
-      />
       <ClaudeLoginModal />
       <div className="flex flex-col w-full h-full relative overflow-hidden bg-background select-none">
         {/* Windows Title Bar (only shown on Windows with frameless window) */}
         <WindowsTitleBar />
         <div className="flex flex-1 overflow-hidden">
-          {/* Left Sidebar (Agents) */}
+          {/* Left Sidebar - switches between chat list and settings nav */}
           <ResizableSidebar
           isOpen={!isMobile && sidebarOpen}
           onClose={handleCloseSidebar}
@@ -271,15 +268,19 @@ export function AgentsLayout() {
           animationDuration={SIDEBAR_ANIMATION_DURATION}
           initialWidth={0}
           exitWidth={0}
-          showResizeTooltip={true}
+          showResizeTooltip={!isSettingsView}
           className="overflow-hidden bg-background border-r"
           style={{ borderRightWidth: "0.5px" }}
         >
-          <AgentsSidebar
-            desktopUser={desktopUser}
-            onSignOut={handleSignOut}
-            onToggleSidebar={handleCloseSidebar}
-          />
+          {isSettingsView ? (
+            <SettingsSidebar />
+          ) : (
+            <AgentsSidebar
+              desktopUser={desktopUser}
+              onSignOut={handleSignOut}
+              onToggleSidebar={handleCloseSidebar}
+            />
+          )}
         </ResizableSidebar>
 
           {/* Main Content */}

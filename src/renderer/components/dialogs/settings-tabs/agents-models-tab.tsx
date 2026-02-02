@@ -1,5 +1,7 @@
 import { useAtom, useSetAtom } from "jotai"
 import { useEffect, useState } from "react"
+import { MoreHorizontal, Plus } from "lucide-react"
+import { useCallback, useEffect, useRef, useState } from "react"
 import { toast } from "sonner"
 import {
   activeProfileIdAtom,
@@ -98,6 +100,48 @@ export function AgentsModelsTab() {
     setOpenaiKey(storedOpenAIKey)
   }, [storedOpenAIKey])
 
+  const savedConfigRef = useRef(storedConfig)
+
+  const handleBlurSave = useCallback(() => {
+    const trimmedModel = model.trim()
+    const trimmedBaseUrl = baseUrl.trim()
+    const trimmedToken = token.trim()
+
+    // Only save if all fields are filled
+    if (trimmedModel && trimmedBaseUrl && trimmedToken) {
+      const next: CustomClaudeConfig = {
+        model: trimmedModel,
+        token: trimmedToken,
+        baseUrl: trimmedBaseUrl,
+      }
+      if (
+        next.model !== savedConfigRef.current.model ||
+        next.token !== savedConfigRef.current.token ||
+        next.baseUrl !== savedConfigRef.current.baseUrl
+      ) {
+        setStoredConfig(next)
+        savedConfigRef.current = next
+      }
+    } else if (!trimmedModel && !trimmedBaseUrl && !trimmedToken) {
+      // All cleared — reset
+      if (savedConfigRef.current.model || savedConfigRef.current.token || savedConfigRef.current.baseUrl) {
+        setStoredConfig(EMPTY_CONFIG)
+        savedConfigRef.current = EMPTY_CONFIG
+      }
+    }
+  }, [model, baseUrl, token, setStoredConfig])
+
+  const handleReset = () => {
+    setStoredConfig(EMPTY_CONFIG)
+    savedConfigRef.current = EMPTY_CONFIG
+    setModel("")
+    setBaseUrl("")
+    setToken("")
+    toast.success("Model settings reset")
+  }
+
+  const canReset = Boolean(model.trim() || baseUrl.trim() || token.trim())
+
   const handleClaudeCodeSetup = () => {
     // Don't disconnect - just open onboarding to add a new account
     // The previous code was calling disconnectClaudeCode.mutate() which
@@ -112,6 +156,7 @@ export function AgentsModelsTab() {
   const canResetOpenAI = !!trimmedOpenAIKey
 
   const handleSaveOpenAI = async () => {
+    if (trimmedOpenAIKey === storedOpenAIKey) return // No change
     if (trimmedOpenAIKey && !trimmedOpenAIKey.startsWith("sk-")) {
       toast.error("Invalid OpenAI API key format. Key should start with 'sk-'")
       return
@@ -282,52 +327,114 @@ export function AgentsModelsTab() {
             )}
           </div>
         </div>
+        <AnthropicAccountsSection />
+      </div>
+
+      <div className="space-y-2">
+        <div className="pb-2 flex items-center justify-between">
+          <h4 className="text-sm font-medium text-foreground">
+            Override Model
+          </h4>
+          {canReset && (
+            <Button variant="ghost" size="sm" onClick={handleReset} className="text-muted-foreground hover:text-red-600 hover:bg-red-500/10">
+              Reset
+            </Button>
+          )}
+        </div>
+        <div className="bg-background rounded-lg border border-border overflow-hidden">
+          <div className="flex items-center justify-between p-4">
+            <div className="flex-1">
+              <Label className="text-sm font-medium">Model name</Label>
+              <p className="text-xs text-muted-foreground">
+                Model identifier to use for requests
+              </p>
+            </div>
+            <div className="flex-shrink-0 w-80">
+              <Input
+                value={model}
+                onChange={(e) => setModel(e.target.value)}
+                onBlur={handleBlurSave}
+                className="w-full"
+                placeholder="claude-3-7-sonnet-20250219"
+              />
+            </div>
+          </div>
+
+          <div className="flex items-center justify-between p-4 border-t border-border">
+            <div className="flex-1">
+              <Label className="text-sm font-medium">API token</Label>
+              <p className="text-xs text-muted-foreground">
+                ANTHROPIC_AUTH_TOKEN env
+              </p>
+            </div>
+            <div className="flex-shrink-0 w-80">
+              <Input
+                type="password"
+                value={token}
+                onChange={(e) => setToken(e.target.value)}
+                onBlur={handleBlurSave}
+                className="w-full"
+                placeholder="sk-ant-..."
+              />
+            </div>
+          </div>
+
+          <div className="flex items-center justify-between p-4 border-t border-border">
+            <div className="flex-1">
+              <Label className="text-sm font-medium">Base URL</Label>
+              <p className="text-xs text-muted-foreground">
+                ANTHROPIC_BASE_URL env
+              </p>
+            </div>
+            <div className="flex-shrink-0 w-80">
+              <Input
+                value={baseUrl}
+                onChange={(e) => setBaseUrl(e.target.value)}
+                onBlur={handleBlurSave}
+                className="w-full"
+                placeholder="https://api.anthropic.com"
+              />
+            </div>
+          </div>
+
+        </div>
       </div>
 
       {/* OpenAI API Key for Voice Input */}
       <div className="space-y-2">
-        <div className="pb-2">
+        <div className="pb-2 flex items-center justify-between">
           <h4 className="text-sm font-medium text-foreground">Voice Input</h4>
-        </div>
-
-        <div className="bg-background rounded-lg border border-border overflow-hidden">
-          <div className="p-4 space-y-4">
-            <div className="flex items-center justify-between gap-6">
-              <div className="flex-1">
-                <Label className="text-sm font-medium">OpenAI API Key</Label>
-                <p className="text-xs text-muted-foreground">
-                  Required for voice transcription (Whisper API). Free users need their own key.
-                </p>
-              </div>
-              <div className="flex-shrink-0 w-80">
-                <Input
-                  type="password"
-                  value={openaiKey}
-                  onChange={(e) => setOpenaiKey(e.target.value)}
-                  className="w-full"
-                  placeholder="sk-..."
-                />
-              </div>
-            </div>
-          </div>
-
-          <div className="bg-muted p-3 rounded-b-lg flex justify-end gap-2 border-t">
+          {canResetOpenAI && (
             <Button
               variant="ghost"
               size="sm"
               onClick={handleResetOpenAI}
-              disabled={!canResetOpenAI || setOpenAIKeyMutation.isPending}
-              className="hover:bg-red-500/10 hover:text-red-600"
+              disabled={setOpenAIKeyMutation.isPending}
+              className="text-muted-foreground hover:text-red-600 hover:bg-red-500/10"
             >
               Remove
             </Button>
-            <Button
-              size="sm"
-              onClick={handleSaveOpenAI}
-              disabled={!canSaveOpenAI || setOpenAIKeyMutation.isPending}
-            >
-              Save
-            </Button>
+          )}
+        </div>
+
+        <div className="bg-background rounded-lg border border-border overflow-hidden">
+          <div className="flex items-center justify-between gap-6 p-4">
+            <div className="flex-1">
+              <Label className="text-sm font-medium">OpenAI API Key</Label>
+              <p className="text-xs text-muted-foreground">
+                Required for voice transcription (Whisper API). Free users need their own key.
+              </p>
+            </div>
+            <div className="flex-shrink-0 w-80">
+              <Input
+                type="password"
+                value={openaiKey}
+                onChange={(e) => setOpenaiKey(e.target.value)}
+                onBlur={handleSaveOpenAI}
+                className="w-full"
+                placeholder="sk-..."
+              />
+            </div>
           </div>
         </div>
       </div>

@@ -26,6 +26,8 @@ export const projects = sqliteTable("projects", {
   // Agent permission overrides (null = use global default)
   agentPermissionLocalMode: text("agent_permission_local_mode"), // "auto" | "prompt" | "restrict" | null
   agentPermissionWorktreeMode: text("agent_permission_worktree_mode"), // "auto" | "prompt" | "restrict" | null
+  // Custom project icon (absolute path to local image file)
+  iconPath: text("icon_path"),
 })
 
 export const projectsRelations = relations(projects, ({ many }) => ({
