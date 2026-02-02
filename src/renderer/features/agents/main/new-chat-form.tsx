@@ -319,11 +319,9 @@ export function NewChatForm({
 
 
   const handleConfigureWorktree = () => {
-    // Open the project-specific worktree settings tab
-    if (validatedProject?.id) {
-      setSettingsActiveTab(`project-${validatedProject.id}` as any)
-      setSettingsDialogOpen(true)
-    }
+    // Open the projects settings tab
+    setSettingsActiveTab("projects")
+    setSettingsDialogOpen(true)
   }
 
   // Parse owner/repo from GitHub URL

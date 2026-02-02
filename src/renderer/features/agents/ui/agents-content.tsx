@@ -63,6 +63,7 @@ import { AlignJustify } from "lucide-react"
 import { AgentsQuickSwitchDialog } from "../components/agents-quick-switch-dialog"
 import { SubChatsQuickSwitchDialog } from "../components/subchats-quick-switch-dialog"
 import { isDesktopApp } from "../../../lib/utils/platform"
+import { SettingsContent } from "../../settings/settings-content"
 // Desktop mock
 const useIsAdmin = () => false
 
@@ -817,8 +818,10 @@ export function AgentsContent() {
         data-agents-page
         data-mobile-view
       >
-        {/* Mobile: Automations/Inbox fullscreen views (gated behind beta flag) */}
-        {betaAutomationsEnabled && desktopView === "automations" ? (
+        {/* Mobile: Settings/Automations/Inbox fullscreen views */}
+        {desktopView === "settings" ? (
+          <SettingsContent />
+        ) : betaAutomationsEnabled && desktopView === "automations" ? (
           <AutomationsView />
         ) : betaAutomationsEnabled && desktopView === "automations-detail" ? (
           <AutomationsDetailView />
@@ -954,7 +957,9 @@ export function AgentsContent() {
           className="flex-1 min-w-0 overflow-hidden"
           style={{ minWidth: "350px" }}
         >
-          {betaAutomationsEnabled && desktopView === "automations" ? (
+          {desktopView === "settings" ? (
+            <SettingsContent />
+          ) : betaAutomationsEnabled && desktopView === "automations" ? (
             <AutomationsView />
           ) : betaAutomationsEnabled && desktopView === "automations-detail" ? (
             <AutomationsDetailView />
