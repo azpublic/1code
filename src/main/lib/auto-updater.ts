@@ -1,6 +1,8 @@
 import { BrowserWindow, ipcMain, app } from "electron"
 import log from "electron-log"
 import { autoUpdater, type UpdateInfo, type ProgressInfo } from "electron-updater"
+import { readFileSync, writeFileSync, existsSync } from "fs"
+import { join } from "path"
 
 /**
  * IMPORTANT: Do NOT use lazy/dynamic imports for electron-updater!
@@ -32,7 +34,39 @@ const MIN_CHECK_INTERVAL = 60 * 1000 // 1 minute
 let lastCheckTime = 0
 
 // Auto-update check enabled state (user preference)
-let autoUpdateCheckEnabled = true
+let autoUpdateCheckEnabled = false
+
+// Update channel preference file
+const CHANNEL_PREF_FILE = "update-channel.json"
+
+type UpdateChannel = "latest" | "beta"
+
+function getChannelPrefPath(): string {
+  return join(app.getPath("userData"), CHANNEL_PREF_FILE)
+}
+
+function getSavedChannel(): UpdateChannel {
+  try {
+    const prefPath = getChannelPrefPath()
+    if (existsSync(prefPath)) {
+      const data = JSON.parse(readFileSync(prefPath, "utf-8"))
+      if (data.channel === "beta" || data.channel === "latest") {
+        return data.channel
+      }
+    }
+  } catch {
+    // Ignore read errors, fall back to default
+  }
+  return "latest"
+}
+
+function saveChannel(channel: UpdateChannel): void {
+  try {
+    writeFileSync(getChannelPrefPath(), JSON.stringify({ channel }), "utf-8")
+  } catch (error) {
+    log.error("[AutoUpdater] Failed to save channel preference:", error)
+  }
+}
 
 let getAllWindows: (() => BrowserWindow[]) | null = null
 

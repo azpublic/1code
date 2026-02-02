@@ -207,6 +207,7 @@ export type SettingsTab =
   | "skills"
   | "agents"
   | "mcp"
+  | "plugins"
   | "worktrees"
   | "projects"
   | "debug"
@@ -579,6 +580,15 @@ export const enableTasksAtom = atomWithStorage<boolean>(
   { getOnInit: true },
 )
 
+// Beta: Enable Early Access Updates
+// When enabled, the app checks for beta releases in addition to stable releases
+export const betaUpdatesEnabledAtom = atomWithStorage<boolean>(
+  "preferences:beta-updates-enabled",
+  false, // Default OFF - only stable releases
+  undefined,
+  { getOnInit: true },
+)
+
 // Preferences - Ctrl+Tab Quick Switch Target
 // When "workspaces" (default), Ctrl+Tab switches between workspaces, and Opt+Ctrl+Tab switches between agents
 // When "agents", Ctrl+Tab switches between agents, and Opt+Ctrl+Tab switches between workspaces
@@ -946,3 +956,20 @@ export const preferredEditorAtom = atomWithStorage<ExternalApp>(
   undefined,
   { getOnInit: true },
 )
+
+// ============================================
+// MCP APPROVAL DIALOG ATOMS
+// ============================================
+
+export type PendingMcpApproval = {
+  pluginSource: string
+  serverName: string
+  identifier: string
+  config: Record<string, unknown>
+}
+
+// Whether the MCP approval dialog is open
+export const mcpApprovalDialogOpenAtom = atom<boolean>(false)
+
+// Pending MCP approvals to show in the dialog
+export const pendingMcpApprovalsAtom = atom<PendingMcpApproval[]>([])

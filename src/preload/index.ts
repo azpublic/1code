@@ -269,6 +269,8 @@ export interface DesktopApi {
   checkForUpdates: () => Promise<UpdateInfo | null>
   downloadUpdate: () => Promise<boolean>
   installUpdate: () => void
+  setUpdateChannel: (channel: "latest" | "beta") => Promise<boolean>
+  getUpdateChannel: () => Promise<"latest" | "beta">
   onUpdateChecking: (callback: () => void) => () => void
   onUpdateAvailable: (callback: (info: UpdateInfo) => void) => () => void
   onUpdateNotAvailable: (callback: () => void) => () => void
